@@ -4,6 +4,10 @@
   Do NOT commit real secrets to public repositories.
 */
 
+import { getApp, getApps, initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBXPP4lfYO_OSYiv4DdnsoiYEZTl7d0t4I",
@@ -15,4 +19,27 @@ const firebaseConfig = {
   measurementId: "G-TWZZQYR7W3"
 };
 
-export { firebaseConfig };
+let firebaseServices = null;
+
+function initializeFirebaseServices() {
+  if (firebaseServices) {
+    return firebaseServices;
+  }
+
+  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  firebaseServices = { app, auth, db };
+  return firebaseServices;
+}
+
+function getFirebaseServices() {
+  if (!firebaseServices) {
+    throw new Error("Firebase services are not initialized. Call initializeFirebaseServices() first.");
+  }
+
+  return firebaseServices;
+}
+
+export { firebaseConfig, initializeFirebaseServices, getFirebaseServices };

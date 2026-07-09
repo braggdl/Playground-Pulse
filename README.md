@@ -74,3 +74,40 @@ The following items still need to be configured:
 3. Replace placeholder auth functions (`login`, `logout`, `registerUser`) with real Firebase Authentication calls.
 4. Replace placeholder database functions (`createRecord`, `readRecords`, `updateRecord`, `deleteRecord`) with real Firestore calls.
 5. Enable Authentication providers and Firestore rules in the Firebase Console.
+
+## Sprint 1 Phase 1 Foundation (Implemented)
+
+### Model Contracts
+- `models/userModel.js`
+	- Defines `USER_ROLES` constants: Parent, Park Admin, Site Admin.
+	- Exports `createUserModel(partialUser)` with normalized defaults.
+	- Exports role validation helper: `isValidUserRole`.
+- `models/parkModel.js`
+	- Defines maintenance status constants and validation.
+	- Exports `createParkModel(partialPark)` with defaults for Sprint 1 discovery/detail fields.
+
+### Firebase and Service Initialization
+- `services/firebase-config.js`
+	- Centralizes Firebase initialization through `initializeFirebaseServices()`.
+	- Exports shared singleton handles through `getFirebaseServices()`.
+- `services/authService.js`
+	- Implements `login`, `logout`, and `registerUser` using Firebase Authentication SDK.
+	- Uses shared initialization and consistent error wrapping.
+- `services/databaseService.js`
+	- Implements `createRecord`, `readRecords`, `updateRecord`, and `deleteRecord` using Firestore SDK.
+	- Supports simple equality filters in `readRecords(collectionName, filters)`.
+
+### App Bootstrap
+- `controllers/appController.js`
+	- Implements `initializeApp()` startup sequence.
+	- Initializes Firebase services, resolves current view, subscribes to auth state, and initializes auth controller on login view.
+	- Exports shared `appState` contract: `isInitialized`, `authReady`, `currentUser`, `userRole`, and `currentView`.
+
+### Phase 1 Ready Checklist
+- Model field shapes and defaults are defined.
+- Firebase app/auth/db initialization is centralized for services.
+- Auth and database service methods are implemented and guarded by initialization.
+- App startup/bootstrap contract exists for use by later phases.
+
+### Deferred By Request
+- Inline Firebase setup in `views/index.html` remains unchanged for now.
