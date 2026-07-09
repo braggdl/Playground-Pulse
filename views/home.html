@@ -7,10 +7,45 @@
   <link rel="stylesheet" href="../styles/main.css" />
 </head>
 <body>
-  <main>
-    <h1>Landing / Home Page</h1>
-    <p>This is a placeholder for the public landing page and this is the change I made.</p>
-    <!-- Add navigation and introductory project content here. -->
+  <main class="dashboard-container">
+    <section class="dashboard-content">
+      <h1>Playground Pulse</h1>
+      <p>Search for a park by name or location.</p>
+
+      <form id="home-search-form" class="search-box">
+        <input
+          type="text"
+          id="home-search-input"
+          class="search-input"
+          placeholder="Search parks by name or location..."
+          autocomplete="off"
+          required
+        />
+        <button type="submit" class="btn btn-primary">Search</button>
+      </form>
+    </section>
   </main>
+
+  <script type="module">
+    import { initializeApp } from "../controllers/appController.js";
+
+    initializeApp();
+
+    const searchForm = document.getElementById("home-search-form");
+    const searchInput = document.getElementById("home-search-input");
+
+    if (searchForm && searchInput) {
+      searchForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+
+        const searchTerm = searchInput.value.trim();
+        if (!searchTerm) {
+          return;
+        }
+
+        window.location.href = `./dashboard.html?q=${encodeURIComponent(searchTerm)}`;
+      });
+    }
+  </script>
 </body>
 </html>

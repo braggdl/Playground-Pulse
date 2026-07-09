@@ -55,6 +55,26 @@ function getCurrentView() {
   return "index";
 }
 
+function isProtectedView(viewName) {
+  return ["dashboard", "profile"].includes(viewName);
+}
+
+function hideProtectedViewUntilAuthReady() {
+  if (!isProtectedView(appState.currentView)) {
+    return;
+  }
+
+  document.body.style.visibility = "hidden";
+}
+
+function revealProtectedViewAfterAuthReady() {
+  if (!isProtectedView(appState.currentView)) {
+    return;
+  }
+
+  document.body.style.visibility = "visible";
+}
+
 // ============================================================
 // Authentication and Authorization Functions
 // ============================================================
@@ -103,12 +123,9 @@ async function loadUserRole(uid) {
   }
 }
 
-function redirectIfNotAuthenticated(currentView) {
-  // Views that require authentication
-  const protectedViews = ["dashboard", "profile"];
-
-  if (protectedViews.includes(currentView) && !isAuthenticated()) {
-    window.location.href = "./login.html";
+function redirectIfNotAuthenticated(currentView, user = appState.currentUser) {
+  if (isProtectedView(currentView) && !user) {
+    window.location.replace("./login.html");
   }
 }
 
@@ -128,7 +145,12 @@ async function handleAuthStateChanged(firebaseUser) {
   }
 
   // Check route protection after auth state is ready
-  redirectIfNotAuthenticated(appState.currentView);
+  if (isProtectedView(appState.currentView) && !firebaseUser) {
+    redirectIfNotAuthenticated(appState.currentView, firebaseUser);
+    return;
+  }
+
+  revealProtectedViewAfterAuthReady();
 }
 
 // ============================================================
@@ -366,7 +388,27 @@ function initializeViewController() {
   // Phase 3: Initialize search and filter handlers for dashboard
   if (appState.currentView === "dashboard") {
     initializeParkSearchAndFilter();
+    applyInitialDashboardSearchFromUrl();
   }
+}
+
+/**
+ * Apply initial search term passed from home page redirect (?q=...)
+ */
+function applyInitialDashboardSearchFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const initialSearchTerm = (params.get("q") || "").trim();
+
+  if (!initialSearchTerm) {
+    return;
+  }
+
+  const searchInput = document.getElementById("search-input");
+  if (searchInput) {
+    searchInput.value = initialSearchTerm;
+  }
+
+  updateSearchTerm(initialSearchTerm);
 }
 
 /**
@@ -439,6 +481,13 @@ function initializeApp() {
     const { auth } = getFirebaseServices();
 
     appState.currentView = getCurrentView();
+    hideProtectedViewUntilAuthReady();
+
+    // Re-check protection when returning via browser history (BFCache restore).
+    window.addEventListener("pageshow", () => {
+      redirectIfNotAuthenticated(appState.currentView, auth.currentUser);
+    });
+
     onAuthStateChanged(auth, handleAuthStateChanged);
 
     // Route protection now happens in handleAuthStateChanged after auth state is ready
