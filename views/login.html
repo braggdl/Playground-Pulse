@@ -7,10 +7,115 @@
   <link rel="stylesheet" href="../styles/main.css" />
 </head>
 <body>
-  <main>
-    <h1>Login Page</h1>
-    <p>This is a placeholder for user sign in and registration.</p>
-    <!-- Add a login form and registration form UI here. -->
+  <main class="auth-container">
+    <div class="auth-card">
+      <h1>Playground Pulse</h1>
+
+      <!-- Error Message Container -->
+      <div id="auth-error-message" class="error-message" style="display: none;"></div>
+
+      <!-- Login Form -->
+      <form id="login-form" class="auth-form" style="display: block;">
+        <h2>Sign In</h2>
+
+        <div class="form-group">
+          <label for="login-email">Email:</label>
+          <input
+            type="email"
+            id="login-email"
+            placeholder="Enter your email"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="login-password">Password:</label>
+          <input
+            type="password"
+            id="login-password"
+            placeholder="Enter your password"
+            required
+          />
+        </div>
+
+        <button type="button" id="login-btn" class="btn btn-primary">
+          Login
+        </button>
+
+        <p class="auth-toggle">
+          Don't have an account?
+          <a id="toggle-auth-mode" href="#" class="toggle-link">Register here</a>
+        </p>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="auth-form" style="display: none;">
+        <h2>Create Account</h2>
+
+        <div class="form-group">
+          <label for="register-display-name">Display Name:</label>
+          <input
+            type="text"
+            id="register-display-name"
+            placeholder="Enter your name"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="register-email">Email:</label>
+          <input
+            type="email"
+            id="register-email"
+            placeholder="Enter your email"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="register-password">Password:</label>
+          <input
+            type="password"
+            id="register-password"
+            placeholder="Enter password (min 6 characters)"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="register-confirm-password">Confirm Password:</label>
+          <input
+            type="password"
+            id="register-confirm-password"
+            placeholder="Confirm password"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="register-role">Account Type:</label>
+          <select id="register-role">
+            <option value="Parent">Parent</option>
+            <option value="Park Admin">Park Admin</option>
+            <option value="Site Admin">Site Admin</option>
+          </select>
+        </div>
+
+        <button type="button" id="register-btn" class="btn btn-primary">
+          Register
+        </button>
+
+        <p class="auth-toggle">
+          Already have an account?
+          <a id="toggle-auth-mode" href="#" class="toggle-link">Sign in here</a>
+        </p>
+      </form>
+    </div>
   </main>
+
+  <script type="module">
+    import { initializeApp } from "../controllers/appController.js";
+    initializeApp();
+  </script>
 </body>
 </html>

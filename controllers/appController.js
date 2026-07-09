@@ -5,11 +5,12 @@
 */
 
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
-import { initializeAuthController } from "./authController.js";
+import { initializeAuthController, handleLogout } from "./authController.js";
 import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "../services/firebase-config.js";
+import { readRecords } from "../services/databaseService.js";
 
 const appState = {
   isInitialized: false,
@@ -41,9 +42,80 @@ function getCurrentView() {
   return "index";
 }
 
-function handleAuthStateChanged(firebaseUser) {
+// ============================================================
+// Authentication and Authorization Functions
+// ============================================================
+
+function isAuthenticated() {
+  return appState.currentUser !== null;
+}
+
+function getCurrentUserRole() {
+  return appState.userRole;
+}
+
+function canCreateParkRecord() {
+  const role = getCurrentUserRole();
+  return role === "Park Admin" || role === "Site Admin";
+}
+
+function canEditParkRecord() {
+  const role = getCurrentUserRole();
+  return role === "Park Admin" || role === "Site Admin";
+}
+
+function canDeleteParkRecord() {
+  const role = getCurrentUserRole();
+  return role === "Site Admin";
+}
+
+function enforceRoleOrThrow(requiredRoles) {
+  const currentRole = getCurrentUserRole();
+  if (!requiredRoles.includes(currentRole)) {
+    throw new Error(`You don't have permission to perform this action. Required role(s): ${requiredRoles.join(", ")}`);
+  }
+}
+
+async function loadUserRole(uid) {
+  try {
+    const users = await readRecords("users", { uid: uid });
+    if (users && users.length > 0) {
+      appState.userRole = users[0].role;
+    } else {
+      appState.userRole = null;
+    }
+  } catch (error) {
+    console.error("Failed to load user role:", error);
+    appState.userRole = null;
+  }
+}
+
+function redirectIfNotAuthenticated(currentView) {
+  // Views that require authentication
+  const protectedViews = ["dashboard", "profile"];
+
+  if (protectedViews.includes(currentView) && !isAuthenticated()) {
+    window.location.href = "./login.html";
+  }
+}
+
+// ============================================================
+// Auth State Handler
+// ============================================================
+
+async function handleAuthStateChanged(firebaseUser) {
   appState.currentUser = firebaseUser;
   appState.authReady = true;
+
+  // Phase 2: Load user role from Firestore when user logs in
+  if (firebaseUser) {
+    await loadUserRole(firebaseUser.uid);
+  } else {
+    appState.userRole = null;
+  }
+
+  // Check route protection after auth state is ready
+  redirectIfNotAuthenticated(appState.currentView);
 }
 
 function initializeViewController() {
@@ -60,6 +132,7 @@ function initializeApp() {
     appState.currentView = getCurrentView();
     onAuthStateChanged(auth, handleAuthStateChanged);
 
+    // Route protection now happens in handleAuthStateChanged after auth state is ready
     initializeViewController();
     appState.isInitialized = true;
     return appState;
@@ -69,4 +142,13 @@ function initializeApp() {
   }
 }
 
-export { appState, initializeApp };
+export {
+  appState,
+  initializeApp,
+  isAuthenticated,
+  getCurrentUserRole,
+  canCreateParkRecord,
+  canEditParkRecord,
+  canDeleteParkRecord,
+  enforceRoleOrThrow
+};
