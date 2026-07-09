@@ -23,14 +23,95 @@
     </div>
 
     <section class="dashboard-content">
-      <h2>Dashboard</h2>
-      <p>This is a placeholder for the authenticated user dashboard.</p>
-      <!-- Park lists, search, filters, and status updates will be added in Phase 3 -->
+      <h2>Find Playgrounds</h2>
+      
+      <!-- Phase 3: Search and Filter Section -->
+      <div class="search-filter-section">
+        
+        <!-- Search Input -->
+        <div class="search-box">
+          <input
+            type="text"
+            id="search-input"
+            class="search-input"
+            placeholder="Search parks by name or location..."
+            autocomplete="off"
+          />
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-controls">
+          <h3>Filter By:</h3>
+          
+          <!-- Age Groups -->
+          <fieldset class="filter-group">
+            <legend>Age Groups</legend>
+            <label class="filter-checkbox">
+              <input type="checkbox" id="filter-age-toddler" />
+              <span>Toddler (0-2)</span>
+            </label>
+            <label class="filter-checkbox">
+              <input type="checkbox" id="filter-age-kid" />
+              <span>Kid (3-12)</span>
+            </label>
+            <label class="filter-checkbox">
+              <input type="checkbox" id="filter-age-teen" />
+              <span>Teen (13+)</span>
+            </label>
+          </fieldset>
+
+          <!-- Amenities -->
+          <fieldset class="filter-group">
+            <legend>Amenities</legend>
+            <label class="filter-checkbox">
+              <input type="checkbox" id="filter-fenced" />
+              <span>Fenced Area</span>
+            </label>
+            <label class="filter-checkbox">
+              <input type="checkbox" id="filter-restrooms" />
+              <span>Restrooms</span>
+            </label>
+            <label class="filter-checkbox">
+              <input type="checkbox" id="filter-shade" />
+              <span>Shade Available</span>
+            </label>
+          </fieldset>
+
+          <!-- Maintenance Status -->
+          <fieldset class="filter-group">
+            <legend>Maintenance Status</legend>
+            <select id="filter-maintenance" class="filter-select">
+              <option value="">Any Status</option>
+              <option value="good">Good</option>
+              <option value="needs_attention">Needs Attention</option>
+              <option value="closed">Closed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </fieldset>
+
+          <!-- Clear Filters Button -->
+          <button id="clear-filters-btn" class="btn btn-secondary filter-btn">Clear Filters</button>
+        </div>
+      </div>
+
+      <!-- Park Results Section -->
+      <div class="results-section">
+        <div id="park-results-container" class="park-results-container">
+          <!-- Results or state messages rendered here -->
+        </div>
+
+        <!-- Park Detail Section -->
+        <div id="park-detail-container" class="park-detail-container">
+          <!-- Park detail view rendered here when a park is selected -->
+        </div>
+      </div>
+
     </section>
   </main>
 
   <script type="module">
     import { initializeApp, appState } from "../controllers/appController.js";
+    import { handleLogout } from "../controllers/authController.js";
     
     // Initialize app
     initializeApp();
@@ -47,6 +128,12 @@
         }
       }
     }, 100);
+
+    // Wire logout button
+    const logoutBtn = document.getElementById("logout-btn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", handleLogout);
+    }
   </script>
 </body>
 </html>

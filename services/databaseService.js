@@ -86,4 +86,164 @@ async function deleteRecord(collectionName, recordId) {
   }
 }
 
-export { createRecord, readRecords, updateRecord, deleteRecord };
+/**
+ * Phase 3: Search for parks by text query
+ * Performs a partial match search on name and location fields
+ */
+async function searchParks(searchTerm) {
+  try {
+    const db = getDatabaseService();
+    const collectionRef = collection(db, "parks");
+    const snapshot = await getDocs(collectionRef);
+    
+    const searchLower = searchTerm.toLowerCase();
+    const results = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((park) => {
+        const name = (park.name || "").toLowerCase();
+        const location = (park.location || "").toLowerCase();
+        return name.includes(searchLower) || location.includes(searchLower);
+      });
+    
+    return results;
+  } catch (error) {
+    throw new Error(`Search parks failed: ${error.message}`);
+  }
+}
+
+/**
+ * Phase 3: Filter parks by multiple criteria
+ * Supports age groups, amenities, and maintenance status filters
+ */
+async function filterParks(filterCriteria) {
+  try {
+    const db = getDatabaseService();
+    const collectionRef = collection(db, "parks");
+    const snapshot = await getDocs(collectionRef);
+    
+    const results = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((park) => {
+        // Check age groups filter
+        if (filterCriteria.ageGroups && filterCriteria.ageGroups.length > 0) {
+          const parkHasAgeGroup = filterCriteria.ageGroups.some(
+            (group) => park.ageGroups?.[group] === true
+          );
+          if (!parkHasAgeGroup) return false;
+        }
+        
+        // Check fenced area filter
+        if (filterCriteria.fencedArea !== undefined && filterCriteria.fencedArea !== null) {
+          if (park.fencedArea !== filterCriteria.fencedArea) return false;
+        }
+        
+        // Check restrooms filter
+        if (filterCriteria.restrooms !== undefined && filterCriteria.restrooms !== null) {
+          if (park.restrooms !== filterCriteria.restrooms) return false;
+        }
+        
+        // Check shade availability filter
+        if (filterCriteria.shadeAvailable !== undefined && filterCriteria.shadeAvailable !== null) {
+          if (park.shadeAvailable !== filterCriteria.shadeAvailable) return false;
+        }
+        
+        // Check maintenance status filter
+        if (filterCriteria.maintenanceStatus) {
+          if (park.maintenanceStatus !== filterCriteria.maintenanceStatus) return false;
+        }
+        
+        return true;
+      });
+    
+    return results;
+  } catch (error) {
+    throw new Error(`Filter parks failed: ${error.message}`);
+  }
+}
+
+/**
+ * Phase 3: Combined search and filter
+ * Performs text search AND applies additional filters
+ */
+async function searchAndFilterParks(searchTerm, filterCriteria) {
+  try {
+    const db = getDatabaseService();
+    const collectionRef = collection(db, "parks");
+    const snapshot = await getDocs(collectionRef);
+    
+    const searchLower = searchTerm.toLowerCase();
+    const results = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((park) => {
+        // Apply search filter
+        if (searchTerm) {
+          const name = (park.name || "").toLowerCase();
+          const location = (park.location || "").toLowerCase();
+          if (!name.includes(searchLower) && !location.includes(searchLower)) {
+            return false;
+          }
+        }
+        
+        // Check age groups filter
+        if (filterCriteria.ageGroups && filterCriteria.ageGroups.length > 0) {
+          const parkHasAgeGroup = filterCriteria.ageGroups.some(
+            (group) => park.ageGroups?.[group] === true
+          );
+          if (!parkHasAgeGroup) return false;
+        }
+        
+        // Check fenced area filter
+        if (filterCriteria.fencedArea !== undefined && filterCriteria.fencedArea !== null) {
+          if (park.fencedArea !== filterCriteria.fencedArea) return false;
+        }
+        
+        // Check restrooms filter
+        if (filterCriteria.restrooms !== undefined && filterCriteria.restrooms !== null) {
+          if (park.restrooms !== filterCriteria.restrooms) return false;
+        }
+        
+        // Check shade availability filter
+        if (filterCriteria.shadeAvailable !== undefined && filterCriteria.shadeAvailable !== null) {
+          if (park.shadeAvailable !== filterCriteria.shadeAvailable) return false;
+        }
+        
+        // Check maintenance status filter
+        if (filterCriteria.maintenanceStatus) {
+          if (park.maintenanceStatus !== filterCriteria.maintenanceStatus) return false;
+        }
+        
+        return true;
+      });
+    
+    return results;
+  } catch (error) {
+    throw new Error(`Search and filter parks failed: ${error.message}`);
+  }
+}
+
+/**
+ * Phase 3: Get a single park by ID
+ */
+async function getParkById(parkId) {
+  try {
+    const parks = await readRecords("parks", {});
+    const park = parks.find((p) => p.id === parkId);
+    if (!park) {
+      throw new Error(`Park with ID ${parkId} not found`);
+    }
+    return park;
+  } catch (error) {
+    throw new Error(`Get park by ID failed: ${error.message}`);
+  }
+}
+
+export {
+  createRecord,
+  readRecords,
+  updateRecord,
+  deleteRecord,
+  searchParks,
+  filterParks,
+  searchAndFilterParks,
+  getParkById
+};

@@ -268,7 +268,7 @@ main {
 .profile-card {
   background: #fff;
   padding: 2rem;
-  border-radius: 4px;
+  border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   max-width: 600px;
   margin: 0 auto;
@@ -297,6 +297,303 @@ main {
   background-color: #f9f9f9;
   border-radius: 4px;
   border-left: 3px solid #2196F3;
+}
+
+/* ============================================================
+   Phase 3: Search and Filter Styles
+   ============================================================ */
+
+.search-filter-section {
+  margin-bottom: 2rem;
+  background: #f9f9f9;
+  padding: 1.5rem;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.search-box {
+  margin-bottom: 1.5rem;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+  transition: border-color 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+.filter-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.filter-controls h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+  color: #333;
+}
+
+.filter-group {
+  border: 1px solid #ddd;
+  padding: 1rem;
+  border-radius: 4px;
+  background: white;
+}
+
+.filter-group legend {
+  font-weight: bold;
+  color: #333;
+  padding: 0 0.5rem;
+}
+
+.filter-checkbox {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-checkbox input[type="checkbox"] {
+  margin-right: 0.5rem;
+  cursor: pointer;
+  width: auto;
+  padding: 0;
+}
+
+.filter-checkbox span {
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.filter-select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  background: white;
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+.filter-btn {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+/* ============================================================
+   Phase 3: Results Section Styles
+   ============================================================ */
+
+.results-section {
+  margin-top: 2rem;
+}
+
+.park-results-container {
+  min-height: 200px;
+}
+
+.park-detail-container {
+  min-height: 100px;
+}
+
+/* Loading State */
+.state-loading {
+  text-align: center;
+  padding: 2rem;
+  background: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #4CAF50;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.state-loading p {
+  color: #666;
+  font-size: 0.95rem;
+}
+
+/* Empty State */
+.state-empty {
+  text-align: center;
+  padding: 2rem;
+  background: #fffbea;
+  border-radius: 4px;
+  border: 1px solid #ffe082;
+}
+
+.state-empty p {
+  color: #f57f17;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+/* Error State */
+.state-error {
+  padding: 1.5rem;
+  background: #ffebee;
+  border-radius: 4px;
+  border: 1px solid #ef5350;
+}
+
+.state-error .error-message {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.state-error .btn {
+  margin-top: 1rem;
+}
+
+/* Results Header */
+.results-header {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.results-header p {
+  margin: 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+/* Park Results List */
+.park-results-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Park Card */
+.park-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.park-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+  border-color: #4CAF50;
+}
+
+.park-card h3 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 1.2rem;
+}
+
+.park-location {
+  margin: 0 0 1rem 0;
+  color: #666;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.park-amenities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.amenity-tag {
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.park-status {
+  margin: 0;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+/* Park Detail */
+.park-detail {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+}
+
+.park-detail h2 {
+  margin-top: 0;
+  color: #333;
+  border-bottom: 2px solid #4CAF50;
+  padding-bottom: 1rem;
+}
+
+.detail-location {
+  font-size: 1rem;
+  color: #666;
+  margin: 0 0 1.5rem 0;
+}
+
+.detail-section {
+  margin-bottom: 2rem;
+}
+
+.detail-section h3 {
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.detail-section p {
+  margin: 0.5rem 0;
+  color: #555;
+  line-height: 1.6;
+}
+
+.detail-section ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  color: #555;
+}
+
+.detail-section li {
+  margin: 0.5rem 0;
 }
 
 /* ============================================================
@@ -334,5 +631,17 @@ main {
   .btn {
     width: 100%;
     padding: 1rem;
+  }
+
+  .filter-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .park-results-list {
+    grid-template-columns: 1fr;
+  }
+
+  .park-detail {
+    padding: 1.5rem;
   }
 }
