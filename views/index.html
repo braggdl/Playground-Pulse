@@ -20,5 +20,28 @@
       </ul>
     </nav>
   </main>
+  <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXPP4lfYO_OSYiv4DdnsoiYEZTl7d0t4I",
+    authDomain: "playground-pulse-8e2c4.firebaseapp.com",
+    projectId: "playground-pulse-8e2c4",
+    storageBucket: "playground-pulse-8e2c4.firebasestorage.app",
+    messagingSenderId: "1077539477518",
+    appId: "1:1077539477518:web:0500c43a256019e685845f",
+    measurementId: "G-TWZZQYR7W3"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  </script>
 </body>
 </html>
