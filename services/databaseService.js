@@ -11,6 +11,7 @@ import {
   doc,
   getDocs,
   query,
+  setDoc,
   updateDoc,
   where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -40,6 +41,22 @@ async function createRecord(collectionName, recordData) {
     return { id: recordRef.id, ...recordData };
   } catch (error) {
     throw new Error(`Create record failed: ${error.message}`);
+  }
+}
+
+/**
+ * Create or overwrite a user profile with a deterministic document ID.
+ * This aligns with common Firestore rules that scope writes to request.auth.uid.
+ */
+async function createUserRecord(userId, userData) {
+  try {
+    const db = getDatabaseService();
+    const userRef = doc(db, "users", userId);
+    await setDoc(userRef, userData);
+
+    return { id: userId, ...userData };
+  } catch (error) {
+    throw new Error(`Create user record failed: ${error.message}`);
   }
 }
 
@@ -269,6 +286,7 @@ async function editParkRecord(parkId, updatedData) {
 
 export {
   createRecord,
+  createUserRecord,
   readRecords,
   updateRecord,
   deleteRecord,

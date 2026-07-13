@@ -432,13 +432,14 @@ async function submitParkForm() {
       throw new Error("No park form is active.");
     }
 
+    // Capture current form input values before any state-driven re-render.
+    const parkData = getParkFormDataFromDom();
+    validateParkFormData(parkData);
+
     appState.isSubmittingParkForm = true;
     appState.parkFormError = null;
     appState.parkFormSuccess = null;
     renderParkForm();
-
-    const parkData = getParkFormDataFromDom();
-    validateParkFormData(parkData);
 
     let savedPark = null;
     let successMessage = "";

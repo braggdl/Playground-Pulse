@@ -5,7 +5,7 @@
 */
 
 import { login, logout, registerUser } from "../services/authService.js";
-import { createRecord, readRecords } from "../services/databaseService.js";
+import { createUserRecord } from "../services/databaseService.js";
 import { createUserModel } from "../models/userModel.js";
 
 let isAuthMode = "login"; // Track whether we're in login or register mode
@@ -211,7 +211,7 @@ async function handleRegister() {
       role: role
     });
 
-    await createRecord("users", userRecord);
+    await createUserRecord(firebaseUser.uid, userRecord);
 
     // Redirect to dashboard on success
     window.location.href = "./dashboard.html";
@@ -225,6 +225,8 @@ async function handleRegister() {
       showError("Password is too weak. Please use a stronger password.");
     } else if (error.message.includes("auth/invalid-email")) {
       showError("Invalid email address.");
+    } else if (error.message.includes("Create user record failed")) {
+      showError("Account was created, but profile setup failed. Please contact support or retry.");
     } else {
       showError(error.message || "Registration failed. Please try again.");
     }
