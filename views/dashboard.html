@@ -29,6 +29,10 @@
 
     <section class="dashboard-content">
       <h2>Find Playgrounds</h2>
+
+      <div class="park-management-controls">
+        <button id="create-park-btn" class="btn btn-primary" style="display: none;">Create Park</button>
+      </div>
       
       <!-- Phase 3: Search and Filter Section -->
       <div class="search-filter-section">
@@ -108,6 +112,10 @@
         <!-- Park Detail Section -->
         <div id="park-detail-container" class="park-detail-container">
           <!-- Park detail view rendered here when a park is selected -->
+        </div>
+
+        <div id="park-form-container" class="park-form-container">
+          <!-- Create/edit park form rendered here for authorized roles -->
         </div>
       </div>
 

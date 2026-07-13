@@ -1,3 +1,4 @@
 - Investigate different failure messages for different types of login failures
-- search/filter implementation currently reads all parks and filters client-side. Not a true database-side query strategy if the dataset grows.
+- Search/filter implementation currently reads all parks and filters client-side. Not a true database-side query strategy if the dataset grows.
 - Currently need to be logged in for search feature to work
+- AI: Duplicate auth toggle ID bug

@@ -1,28 +1,73 @@
 # Playground-Pulse
 A kid-friendly park finder.
+
 # Team Members
 Group Corktown: Danny Bragg, Brandon Schwartz, and May Wu
-#Course
-CSSE5150
-# Project Description:
-For parents and caregivers, planning an outdoor outing can be challenging because standard mapping tools (like Google Maps) lack specific, child-friendly details. Caregivers often do not know if a park has age-appropriate equipment (such as toddler swings versus steep climbing structures), critical safety fencing, operational restrooms, or if it is currently overcrowded or undergoing maintenance. This information gap frequently leads to wasted trips, safety concerns, and frustrated children.
-Playground Pulse: A Kid-Friendly Park Finder is a web-based, community-driven park finder application designed to solve this problem by providing detailed, real-time insights into local playgrounds. Utilizing three distinct user roles (Parent, Park Admin, and Site Admin) and a persistent relational database, the system allows parents to search and filter parks with granular criteria, report current crowd levels, and submit safety or maintenance concerns. This empowers families to make informed decisions before leaving the house, ensuring a safer, more predictable, and highly enjoyable outdoor experience.
-# Usage
-Section for future use to document how web app is to be used by the end user. 
 
-## Starter Web Application Overview
-This repository now includes a beginner-friendly starter web application scaffold using HTML, CSS, and JavaScript with a simple MVC-style organization.
+# Course
+CSSE5150
+
+# Project Description
+For parents and caregivers, planning an outdoor outing can be challenging because standard mapping tools (like Google Maps) lack specific, child-friendly details. Caregivers often do not know if a park has age-appropriate equipment (such as toddler swings versus steep climbing structures), critical safety fencing, operational restrooms, or if it is currently overcrowded or undergoing maintenance. This information gap frequently leads to wasted trips, safety concerns, and frustrated children.
+
+Playground Pulse: A Kid-Friendly Park Finder is a web-based, community-driven park finder application designed to solve this problem by providing detailed, real-time insights into local playgrounds. Utilizing three distinct user roles (Parent, Park Admin, and Site Admin) and a persistent relational database, the system allows parents to search and filter parks with granular criteria, report current crowd levels, and submit safety or maintenance concerns. This empowers families to make informed decisions before leaving the house, ensuring a safer, more predictable, and highly enjoyable outdoor experience.
+
+## Core Functionality
+1. User authentication with registration, login, and logout.
+2. Role-aware experience for Parent, Park Admin, and Site Admin users.
+3. Park search by text (name/location).
+4. Child-friendly park filtering by:
+   - Age group (toddler, kid, teen)
+   - Fenced area
+   - Restrooms
+   - Shade availability
+   - Maintenance status
+5. Park detail view with location, safety notes, amenities notes, and feature summary.
+6. Park creation and editing for authorized admin roles.
+
+## User Roles
+1. Parent: browse, search, filter, and view park details.
+2. Park Admin: parent capabilities plus create/edit park records.
+3. Site Admin: parent capabilities plus create/edit park records.
+
+## Usage
+
+### Start The App Locally
+1. Open this project in VS Code.
+2. Run a local static server from the project root (for example, VS Code Live Server).
+3. Open `views/index.html` or `views/login.html` in your browser.
+
+### Typical User Flow
+1. Open `views/login.html` and sign in or register.
+2. Go to Dashboard to search and filter parks.
+3. Select a park to open its detail section.
+4. If your role is Park Admin or Site Admin, create or edit park records from the dashboard controls.
+5. Open Profile to review account details and role.
+
+### Search And Filter
+1. Use the dashboard search box for name/location text.
+2. Apply one or multiple filters.
+3. Use Clear Filters to reset discovery criteria.
+
+### Park Detail And Management
+1. Click a park card to open detail information.
+2. Admin roles can open create/edit park forms from dashboard/detail actions.
+3. Save changes to update park records.
+
+## Firebase Configuration
+1. Set Firebase project values in `services/firebase-config.js`.
+2. Enable Email/Password sign-in in Firebase Authentication.
+3. Ensure Firestore is enabled and configured for your environment.
+4. Use `users` and `parks` collections for core app data.
 
 ## Project Folder Structure
 ```text
 Playground-Pulse/
 |-- assets/
-|   |-- README.md
 |-- controllers/
 |   |-- appController.js
 |   |-- authController.js
-|-- Development/
-|   |-- PlaygroundPulseIssuesList.csv
+|-- development/
 |-- models/
 |   |-- parkModel.js
 |   |-- userModel.js
@@ -35,79 +80,16 @@ Playground-Pulse/
 |-- views/
 |   |-- dashboard.html
 |   |-- home.html
+|   |-- index.html
 |   |-- login.html
 |   |-- profile.html
 |-- README.md
 ```
 
-## Major Folder Purpose
-- `models`: Data shape definitions and model helper functions.
-- `views`: HTML pages and user interface templates.
-- `controllers`: UI event handling and coordination between views, models, and services.
-- `services`: External system integration code (Firebase auth and Firestore database logic).
-- `assets`: Static files such as images, icons, and media.
-- `styles`: Shared CSS files.
-- `Development`: Development support files such as issue-tracking CSVs.
-
-## Running Locally
-1. Open this folder in VS Code.
-2. Open one of the HTML files in `views` (for example `home.html`).
-3. Run with a local static server (for example VS Code Live Server) or open the file in a browser.
-4. As features are added, connect JavaScript files to the HTML pages with script tags.
-
-## Where Code Should Be Placed
-- Models should be created in `models/`.
-- Views (pages/templates) should be created in `views/`.
-- Controllers should be created in `controllers/`.
-- Services should be created in `services/`.
-- Static assets should be added to `assets/`.
-
-## Firebase Setup Locations
-- Firebase configuration belongs in `services/firebase-config.js`.
-- Authentication code belongs in `services/authService.js`.
-- Firestore database code belongs in `services/databaseService.js`.
-
-## Before Firebase Will Work
-The following items still need to be configured:
-1. Add your Firebase project values to `services/firebase-config.js`.
-2. Install and import Firebase SDK dependencies.
-3. Replace placeholder auth functions (`login`, `logout`, `registerUser`) with real Firebase Authentication calls.
-4. Replace placeholder database functions (`createRecord`, `readRecords`, `updateRecord`, `deleteRecord`) with real Firestore calls.
-5. Enable Authentication providers and Firestore rules in the Firebase Console.
-
-## Sprint 1 Phase 1 Foundation (Implemented)
-
-### Model Contracts
-- `models/userModel.js`
-	- Defines `USER_ROLES` constants: Parent, Park Admin, Site Admin.
-	- Exports `createUserModel(partialUser)` with normalized defaults.
-	- Exports role validation helper: `isValidUserRole`.
-- `models/parkModel.js`
-	- Defines maintenance status constants and validation.
-	- Exports `createParkModel(partialPark)` with defaults for Sprint 1 discovery/detail fields.
-
-### Firebase and Service Initialization
-- `services/firebase-config.js`
-	- Centralizes Firebase initialization through `initializeFirebaseServices()`.
-	- Exports shared singleton handles through `getFirebaseServices()`.
-- `services/authService.js`
-	- Implements `login`, `logout`, and `registerUser` using Firebase Authentication SDK.
-	- Uses shared initialization and consistent error wrapping.
-- `services/databaseService.js`
-	- Implements `createRecord`, `readRecords`, `updateRecord`, and `deleteRecord` using Firestore SDK.
-	- Supports simple equality filters in `readRecords(collectionName, filters)`.
-
-### App Bootstrap
-- `controllers/appController.js`
-	- Implements `initializeApp()` startup sequence.
-	- Initializes Firebase services, resolves current view, subscribes to auth state, and initializes auth controller on login view.
-	- Exports shared `appState` contract: `isInitialized`, `authReady`, `currentUser`, `userRole`, and `currentView`.
-
-### Phase 1 Ready Checklist
-- Model field shapes and defaults are defined.
-- Firebase app/auth/db initialization is centralized for services.
-- Auth and database service methods are implemented and guarded by initialization.
-- App startup/bootstrap contract exists for use by later phases.
-
-### Deferred By Request
-- Inline Firebase setup in `views/index.html` remains unchanged for now.
+## Folder Purpose
+1. `views`: HTML pages and UI markup.
+2. `controllers`: Event handling and page coordination.
+3. `services`: Firebase auth and Firestore access.
+4. `models`: Shared data shapes and defaults.
+5. `styles`: Shared CSS styling.
+6. `development`: planning docs and supporting sprint artifacts.

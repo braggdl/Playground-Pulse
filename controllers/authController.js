@@ -42,17 +42,14 @@ function toggleAuthMode() {
   isAuthMode = isAuthMode === "login" ? "register" : "login";
   const loginForm = document.getElementById("login-form");
   const registerForm = document.getElementById("register-form");
-  const toggleLink = document.getElementById("toggle-auth-mode");
 
-  if (loginForm && registerForm && toggleLink) {
+  if (loginForm && registerForm) {
     if (isAuthMode === "register") {
       loginForm.style.display = "none";
       registerForm.style.display = "block";
-      toggleLink.textContent = "Back to Login";
     } else {
       loginForm.style.display = "block";
       registerForm.style.display = "none";
-      toggleLink.textContent = "Don't have an account? Register";
     }
   }
   clearError();
@@ -265,13 +262,17 @@ function initializeAuthController() {
   }
 
   // Toggle between login and register
-  const toggleLink = document.getElementById("toggle-auth-mode");
-  if (toggleLink) {
+  const toggleLinks = [
+    document.getElementById("toggle-auth-mode-login"),
+    document.getElementById("toggle-auth-mode-register")
+  ].filter(Boolean);
+
+  toggleLinks.forEach((toggleLink) => {
     toggleLink.addEventListener("click", (e) => {
       e.preventDefault();
       toggleAuthMode();
     });
-  }
+  });
 
   // Logout handlers (if buttons exist on this page)
   const logoutBtn = document.getElementById("logout-btn");

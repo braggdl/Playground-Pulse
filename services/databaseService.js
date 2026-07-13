@@ -18,6 +18,7 @@ import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "./firebase-config.js";
+import { createParkModel } from "../models/parkModel.js";
 
 function getDatabaseService() {
   initializeFirebaseServices();
@@ -237,6 +238,35 @@ async function getParkById(parkId) {
   }
 }
 
+/**
+ * Phase 4: Create a park record with Sprint 1 field defaults.
+ */
+async function createParkRecord(parkData) {
+  const now = new Date().toISOString();
+  const normalizedPark = createParkModel({
+    ...parkData,
+    createdAt: parkData.createdAt || now,
+    updatedAt: now
+  });
+
+  const { id, ...recordData } = normalizedPark;
+  return createRecord("parks", recordData);
+}
+
+/**
+ * Phase 4: Edit a park record and stamp updatedAt.
+ */
+async function editParkRecord(parkId, updatedData) {
+  const { id, ...safeUpdatedData } = updatedData;
+  const payload = {
+    ...safeUpdatedData,
+    updatedAt: new Date().toISOString()
+  };
+
+  await updateRecord("parks", parkId, payload);
+  return getParkById(parkId);
+}
+
 export {
   createRecord,
   readRecords,
@@ -245,5 +275,7 @@ export {
   searchParks,
   filterParks,
   searchAndFilterParks,
-  getParkById
+  getParkById,
+  createParkRecord,
+  editParkRecord
 };

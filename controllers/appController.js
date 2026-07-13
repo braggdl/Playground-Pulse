@@ -10,7 +10,13 @@ import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "../services/firebase-config.js";
-import { readRecords, searchAndFilterParks, getParkById } from "../services/databaseService.js";
+import {
+  createParkRecord,
+  editParkRecord,
+  getParkById,
+  readRecords,
+  searchAndFilterParks
+} from "../services/databaseService.js";
 
 const appState = {
   isInitialized: false,
@@ -30,7 +36,12 @@ const appState = {
   parkResults: [],
   isLoadingParks: false,
   parksError: null,
-  selectedPark: null
+  selectedPark: null,
+  parkFormMode: null,
+  parkFormRecordId: null,
+  parkFormError: null,
+  parkFormSuccess: null,
+  isSubmittingParkForm: false
 };
 
 function getCurrentView() {
@@ -109,6 +120,19 @@ function enforceRoleOrThrow(requiredRoles) {
   }
 }
 
+function formatAppError(error, fallbackMessage) {
+  return error?.message || fallbackMessage;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function loadUserRole(uid) {
   try {
     const users = await readRecords("users", { uid: uid });
@@ -129,13 +153,35 @@ function redirectIfNotAuthenticated(currentView, user = appState.currentUser) {
   }
 }
 
+function redirectIfAuthenticatedOnLoginView(currentView, user = appState.currentUser) {
+  if (currentView === "login" && user) {
+    window.location.replace("./dashboard.html");
+    return true;
+  }
+
+  return false;
+}
+
+function applyRouteAccessRules(firebaseUser) {
+  if (isProtectedView(appState.currentView) && !firebaseUser) {
+    redirectIfNotAuthenticated(appState.currentView, firebaseUser);
+    return true;
+  }
+
+  if (redirectIfAuthenticatedOnLoginView(appState.currentView, firebaseUser)) {
+    return true;
+  }
+
+  return false;
+}
+
 // ============================================================
 // Auth State Handler
 // ============================================================
 
 async function handleAuthStateChanged(firebaseUser) {
+  appState.authReady = false;
   appState.currentUser = firebaseUser;
-  appState.authReady = true;
 
   // Phase 2: Load user role from Firestore when user logs in
   if (firebaseUser) {
@@ -144,13 +190,19 @@ async function handleAuthStateChanged(firebaseUser) {
     appState.userRole = null;
   }
 
-  // Check route protection after auth state is ready
-  if (isProtectedView(appState.currentView) && !firebaseUser) {
-    redirectIfNotAuthenticated(appState.currentView, firebaseUser);
+  appState.authReady = true;
+
+  // Route decisions must happen only after auth state is resolved.
+  if (applyRouteAccessRules(firebaseUser)) {
     return;
   }
 
   revealProtectedViewAfterAuthReady();
+
+  if (appState.currentView === "dashboard") {
+    renderParkForm();
+    updateDashboardManagementControls();
+  }
 }
 
 // ============================================================
@@ -247,10 +299,13 @@ async function executeSearchAndFilter() {
 async function selectParkForDetail(parkId) {
   try {
     appState.selectedPark = await getParkById(parkId);
+    appState.parkFormError = null;
+    appState.parkFormSuccess = null;
     renderParkDetail();
   } catch (error) {
     console.error("Failed to load park detail:", error);
-    appState.parksError = error.message;
+    appState.parksError = formatAppError(error, "Failed to load park detail.");
+    renderParkResults();
   }
 }
 
@@ -260,6 +315,154 @@ async function selectParkForDetail(parkId) {
 function clearParkDetail() {
   appState.selectedPark = null;
   renderParkDetail();
+}
+
+function updateDashboardManagementControls() {
+  const createButton = document.getElementById("create-park-btn");
+  if (!createButton) {
+    return;
+  }
+
+  if (canCreateParkRecord()) {
+    createButton.style.display = "inline-flex";
+    createButton.disabled = false;
+  } else {
+    createButton.style.display = "none";
+    createButton.disabled = true;
+  }
+}
+
+function clearParkFormState() {
+  appState.parkFormMode = null;
+  appState.parkFormRecordId = null;
+  appState.parkFormError = null;
+  appState.parkFormSuccess = null;
+  appState.isSubmittingParkForm = false;
+}
+
+function getParkFormDataFromDom() {
+  return {
+    name: (document.getElementById("park-form-name")?.value || "").trim(),
+    location: (document.getElementById("park-form-location")?.value || "").trim(),
+    maintenanceStatus: document.getElementById("park-form-maintenance")?.value || "unknown",
+    safetyNotes: (document.getElementById("park-form-safety-notes")?.value || "").trim(),
+    amenitiesNotes: (document.getElementById("park-form-amenities-notes")?.value || "").trim(),
+    ageGroups: {
+      toddler: Boolean(document.getElementById("park-form-age-toddler")?.checked),
+      kid: Boolean(document.getElementById("park-form-age-kid")?.checked),
+      teen: Boolean(document.getElementById("park-form-age-teen")?.checked)
+    },
+    fencedArea: Boolean(document.getElementById("park-form-fenced")?.checked),
+    restrooms: Boolean(document.getElementById("park-form-restrooms")?.checked),
+    shadeAvailable: Boolean(document.getElementById("park-form-shade")?.checked)
+  };
+}
+
+function validateParkFormData(parkData) {
+  if (!parkData.name) {
+    throw new Error("Park name is required.");
+  }
+
+  if (!parkData.location) {
+    throw new Error("Park location is required.");
+  }
+}
+
+async function refreshParkResultsAfterMutation() {
+  const hasSearchTerm = appState.searchTerm && appState.searchTerm.trim().length > 0;
+  const hasFilters = Object.values(appState.filterCriteria).some(
+    (value) => value !== null && (Array.isArray(value) ? value.length > 0 : true)
+  );
+
+  if (hasSearchTerm || hasFilters) {
+    await executeSearchAndFilter();
+    return;
+  }
+
+  appState.isLoadingParks = true;
+  renderParkResults();
+  appState.parkResults = await readRecords("parks", {});
+  appState.isLoadingParks = false;
+  renderParkResults();
+}
+
+function openCreateParkForm() {
+  try {
+    enforceRoleOrThrow(["Park Admin", "Site Admin"]);
+    appState.parkFormMode = "create";
+    appState.parkFormRecordId = null;
+    appState.parkFormError = null;
+    appState.parkFormSuccess = null;
+    renderParkForm();
+  } catch (error) {
+    appState.parkFormError = formatAppError(error, "You are not allowed to create parks.");
+    renderParkForm();
+  }
+}
+
+function openEditParkForm() {
+  try {
+    enforceRoleOrThrow(["Park Admin", "Site Admin"]);
+
+    if (!appState.selectedPark?.id) {
+      throw new Error("Select a park before editing.");
+    }
+
+    appState.parkFormMode = "edit";
+    appState.parkFormRecordId = appState.selectedPark.id;
+    appState.parkFormError = null;
+    appState.parkFormSuccess = null;
+    renderParkForm();
+  } catch (error) {
+    appState.parkFormError = formatAppError(error, "You are not allowed to edit this park.");
+    renderParkForm();
+  }
+}
+
+function cancelParkForm() {
+  clearParkFormState();
+  renderParkForm();
+}
+
+async function submitParkForm() {
+  try {
+    enforceRoleOrThrow(["Park Admin", "Site Admin"]);
+
+    if (!appState.parkFormMode) {
+      throw new Error("No park form is active.");
+    }
+
+    appState.isSubmittingParkForm = true;
+    appState.parkFormError = null;
+    appState.parkFormSuccess = null;
+    renderParkForm();
+
+    const parkData = getParkFormDataFromDom();
+    validateParkFormData(parkData);
+
+    let savedPark = null;
+    let successMessage = "";
+    if (appState.parkFormMode === "create") {
+      savedPark = await createParkRecord(parkData);
+      successMessage = "Park created successfully.";
+    } else {
+      savedPark = await editParkRecord(appState.parkFormRecordId, parkData);
+      successMessage = "Park updated successfully.";
+    }
+
+    appState.selectedPark = savedPark;
+    appState.isSubmittingParkForm = false;
+    clearParkFormState();
+    appState.parkFormSuccess = successMessage;
+
+    renderParkDetail();
+    renderParkForm();
+    await refreshParkResultsAfterMutation();
+  } catch (error) {
+    appState.isSubmittingParkForm = false;
+    appState.parkFormError = formatAppError(error, "Failed to save park.");
+    renderParkForm();
+  }
 }
 
 /**
@@ -286,7 +489,7 @@ function renderParkResults() {
   if (appState.parksError) {
     resultsContainer.innerHTML = `
       <div class="state-error">
-        <p class="error-message show">${appState.parksError}</p>
+        <p class="error-message show">${escapeHtml(appState.parksError)}</p>
         <button class="btn btn-secondary" onclick="window.location.reload()">Retry</button>
       </div>
     `;
@@ -306,8 +509,8 @@ function renderParkResults() {
   // Results state
   const resultsHTML = appState.parkResults.map((park) => `
     <div class="park-card" onclick="window.appControllerExports.selectParkForDetail('${park.id}')">
-      <h3>${park.name}</h3>
-      <p class="park-location">${park.location}</p>
+      <h3>${escapeHtml(park.name)}</h3>
+      <p class="park-location">${escapeHtml(park.location)}</p>
       <div class="park-amenities">
         ${park.ageGroups?.toddler ? '<span class="amenity-tag">Toddler</span>' : ''}
         ${park.ageGroups?.kid ? '<span class="amenity-tag">Kid</span>' : ''}
@@ -316,7 +519,7 @@ function renderParkResults() {
         ${park.restrooms ? '<span class="amenity-tag">Restrooms</span>' : ''}
         ${park.shadeAvailable ? '<span class="amenity-tag">Shade</span>' : ''}
       </div>
-      <p class="park-status">Status: <strong>${park.maintenanceStatus || 'Unknown'}</strong></p>
+      <p class="park-status">Status: <strong>${escapeHtml(park.maintenanceStatus || 'Unknown')}</strong></p>
     </div>
   `).join("");
 
@@ -348,14 +551,14 @@ function renderParkDetail() {
   detailContainer.innerHTML = `
     <div class="park-detail">
       <button class="btn btn-secondary" onclick="window.appControllerExports.clearParkDetail()">← Back to List</button>
-      <h2>${park.name}</h2>
-      <p class="detail-location"><strong>Location:</strong> ${park.location}</p>
+      <h2>${escapeHtml(park.name)}</h2>
+      <p class="detail-location"><strong>Location:</strong> ${escapeHtml(park.location)}</p>
       
       <section class="detail-section">
         <h3>Safety & Amenities</h3>
-        <p><strong>Safety Notes:</strong> ${park.safetyNotes || 'No safety notes available.'}</p>
-        <p><strong>Amenities:</strong> ${park.amenitiesNotes || 'No amenity details available.'}</p>
-        <p><strong>Maintenance Status:</strong> ${park.maintenanceStatus || 'Unknown'}</p>
+        <p><strong>Safety Notes:</strong> ${escapeHtml(park.safetyNotes || 'No safety notes available.')}</p>
+        <p><strong>Amenities:</strong> ${escapeHtml(park.amenitiesNotes || 'No amenity details available.')}</p>
+        <p><strong>Maintenance Status:</strong> ${escapeHtml(park.maintenanceStatus || 'Unknown')}</p>
       </section>
       
       <section class="detail-section">
@@ -373,10 +576,90 @@ function renderParkDetail() {
       ${canEdit ? `
         <section class="detail-section">
           <h3>Actions</h3>
-          <button class="btn btn-primary">Edit Park</button>
+          <button class="btn btn-primary" onclick="window.appControllerExports.openEditParkForm()">Edit Park</button>
         </section>
       ` : ''}
     </div>
+  `;
+}
+
+function renderParkForm() {
+  const formContainer = document.getElementById("park-form-container");
+  if (!formContainer) {
+    return;
+  }
+
+  const canManage = canCreateParkRecord();
+  const isEditing = appState.parkFormMode === "edit";
+  const sourcePark = isEditing ? appState.selectedPark : null;
+
+  if (!canManage) {
+    formContainer.innerHTML = "";
+    return;
+  }
+
+  if (!appState.parkFormMode) {
+    formContainer.innerHTML = appState.parkFormSuccess
+      ? `<p class="park-form-success">${escapeHtml(appState.parkFormSuccess)}</p>`
+      : "";
+    return;
+  }
+
+  formContainer.innerHTML = `
+    <section class="park-form-panel">
+      <h3>${isEditing ? "Edit Park" : "Create Park"}</h3>
+      ${appState.parkFormError ? `<p class="park-form-error">${escapeHtml(appState.parkFormError)}</p>` : ""}
+      <form id="park-form" class="park-form" onsubmit="event.preventDefault(); window.appControllerExports.submitParkForm();">
+        <div class="form-group">
+          <label for="park-form-name">Park Name</label>
+          <input id="park-form-name" type="text" value="${escapeHtml(sourcePark?.name || "")}" required />
+        </div>
+        <div class="form-group">
+          <label for="park-form-location">Location</label>
+          <input id="park-form-location" type="text" value="${escapeHtml(sourcePark?.location || "")}" required />
+        </div>
+        <div class="form-group">
+          <label for="park-form-maintenance">Maintenance Status</label>
+          <select id="park-form-maintenance">
+            <option value="good" ${(sourcePark?.maintenanceStatus || "") === "good" ? "selected" : ""}>Good</option>
+            <option value="needs_attention" ${(sourcePark?.maintenanceStatus || "") === "needs_attention" ? "selected" : ""}>Needs Attention</option>
+            <option value="closed" ${(sourcePark?.maintenanceStatus || "") === "closed" ? "selected" : ""}>Closed</option>
+            <option value="unknown" ${(sourcePark?.maintenanceStatus || "unknown") === "unknown" ? "selected" : ""}>Unknown</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="park-form-safety-notes">Safety Notes</label>
+          <textarea id="park-form-safety-notes" rows="3">${escapeHtml(sourcePark?.safetyNotes || "")}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="park-form-amenities-notes">Amenities Notes</label>
+          <textarea id="park-form-amenities-notes" rows="3">${escapeHtml(sourcePark?.amenitiesNotes || "")}</textarea>
+        </div>
+
+        <fieldset class="park-form-features">
+          <legend>Age Groups</legend>
+          <label><input id="park-form-age-toddler" type="checkbox" ${sourcePark?.ageGroups?.toddler ? "checked" : ""} /> Toddler</label>
+          <label><input id="park-form-age-kid" type="checkbox" ${sourcePark?.ageGroups?.kid ? "checked" : ""} /> Kid</label>
+          <label><input id="park-form-age-teen" type="checkbox" ${sourcePark?.ageGroups?.teen ? "checked" : ""} /> Teen</label>
+        </fieldset>
+
+        <fieldset class="park-form-features">
+          <legend>Amenities</legend>
+          <label><input id="park-form-fenced" type="checkbox" ${sourcePark?.fencedArea ? "checked" : ""} /> Fenced Area</label>
+          <label><input id="park-form-restrooms" type="checkbox" ${sourcePark?.restrooms ? "checked" : ""} /> Restrooms</label>
+          <label><input id="park-form-shade" type="checkbox" ${sourcePark?.shadeAvailable ? "checked" : ""} /> Shade Available</label>
+        </fieldset>
+
+        <div class="park-form-actions">
+          <button type="submit" class="btn btn-primary" ${appState.isSubmittingParkForm ? "disabled" : ""}>
+            ${appState.isSubmittingParkForm ? "Saving..." : (isEditing ? "Save Changes" : "Create Park")}
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="window.appControllerExports.cancelParkForm()" ${appState.isSubmittingParkForm ? "disabled" : ""}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </section>
   `;
 }
 
@@ -473,6 +756,11 @@ function initializeParkSearchAndFilter() {
   if (clearBtn) {
     clearBtn.addEventListener("click", clearSearchAndFilters);
   }
+
+  const createParkButton = document.getElementById("create-park-btn");
+  if (createParkButton) {
+    createParkButton.addEventListener("click", openCreateParkForm);
+  }
 }
 
 function initializeApp() {
@@ -482,11 +770,6 @@ function initializeApp() {
 
     appState.currentView = getCurrentView();
     hideProtectedViewUntilAuthReady();
-
-    // Re-check protection when returning via browser history (BFCache restore).
-    window.addEventListener("pageshow", () => {
-      redirectIfNotAuthenticated(appState.currentView, auth.currentUser);
-    });
 
     onAuthStateChanged(auth, handleAuthStateChanged);
 
@@ -500,7 +783,11 @@ function initializeApp() {
       clearParkDetail,
       updateSearchTerm,
       updateFilterCriteria,
-      clearSearchAndFilters
+      clearSearchAndFilters,
+      openCreateParkForm,
+      openEditParkForm,
+      cancelParkForm,
+      submitParkForm
     };
     
     return appState;

@@ -299,6 +299,13 @@ main {
   border-left: 3px solid #2196F3;
 }
 
+.profile-field p.role-badge {
+  display: inline-block;
+  background-color: #4CAF50;
+  color: #ffffff;
+  border-left: none;
+}
+
 /* ============================================================
    Phase 3: Search and Filter Styles
    ============================================================ */
@@ -406,12 +413,87 @@ main {
   margin-top: 2rem;
 }
 
+.park-management-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
 .park-results-container {
   min-height: 200px;
 }
 
 .park-detail-container {
   min-height: 100px;
+}
+
+.park-form-container {
+  margin-top: 1rem;
+}
+
+.park-form-panel {
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 1.5rem;
+}
+
+.park-form-panel h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.park-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.park-form textarea,
+.park-form input,
+.park-form select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.park-form-features {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.park-form-features legend {
+  font-weight: bold;
+  padding: 0 0.4rem;
+}
+
+.park-form-features label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.park-form-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.park-form-error {
+  background: #ffebee;
+  border: 1px solid #ef9a9a;
+  color: #b71c1c;
+  padding: 0.75rem;
+  border-radius: 4px;
+}
+
+.park-form-success {
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  color: #1b5e20;
+  padding: 0.75rem;
+  border-radius: 4px;
 }
 
 /* Loading State */
@@ -639,6 +721,18 @@ main {
 
   .park-results-list {
     grid-template-columns: 1fr;
+  }
+
+  .park-management-controls {
+    justify-content: stretch;
+  }
+
+  .park-management-controls .btn {
+    width: 100%;
+  }
+
+  .park-form-actions {
+    flex-direction: column;
   }
 
   .park-detail {
