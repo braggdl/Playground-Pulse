@@ -14,6 +14,7 @@ import {
   orderBy,
   query,
   setDoc,
+  startAfter,
   updateDoc,
   where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -61,6 +62,47 @@ function mapParkSnapshot(snapshot) {
 function applyParkSearchPageLimit(parks, options = {}) {
   const pageSize = normalizeParkSearchPageSize(options.pageSize);
   return parks.slice(0, pageSize);
+}
+
+function buildParkSearchFilterPredicate(searchTerm, filterCriteria = {}) {
+  const normalizedSearch = (searchTerm || "").trim().toLowerCase();
+
+  return (park) => {
+    if (normalizedSearch) {
+      const name = (park.name || "").toLowerCase();
+      const location = (park.location || "").toLowerCase();
+      if (!name.includes(normalizedSearch) && !location.includes(normalizedSearch)) {
+        return false;
+      }
+    }
+
+    if (filterCriteria.ageGroups && filterCriteria.ageGroups.length > 0) {
+      const matchesAge = filterCriteria.ageGroups.some(
+        (group) => park.ageGroups?.[group] === true
+      );
+      if (!matchesAge) {
+        return false;
+      }
+    }
+
+    if (filterCriteria.fencedArea !== undefined && filterCriteria.fencedArea !== null) {
+      if (park.fencedArea !== filterCriteria.fencedArea) return false;
+    }
+
+    if (filterCriteria.restrooms !== undefined && filterCriteria.restrooms !== null) {
+      if (park.restrooms !== filterCriteria.restrooms) return false;
+    }
+
+    if (filterCriteria.shadeAvailable !== undefined && filterCriteria.shadeAvailable !== null) {
+      if (park.shadeAvailable !== filterCriteria.shadeAvailable) return false;
+    }
+
+    if (filterCriteria.maintenanceStatus) {
+      if (park.maintenanceStatus !== filterCriteria.maintenanceStatus) return false;
+    }
+
+    return true;
+  };
 }
 
 async function createRecord(collectionName, recordData) {
@@ -143,18 +185,24 @@ async function searchParks(searchTerm, options = {}) {
   try {
     const db = getDatabaseService();
     const collectionRef = collection(db, "parks");
-    const snapshot = await getDocs(query(collectionRef, limit(PARK_SEARCH_DEFAULTS.maxPageSize)));
-    
-    const searchLower = searchTerm.toLowerCase();
-    const results = snapshot.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter((park) => {
-        const name = (park.name || "").toLowerCase();
-        const location = (park.location || "").toLowerCase();
-        return name.includes(searchLower) || location.includes(searchLower);
-      });
-    
-    return applyParkSearchPageLimit(results, options);
+    const pageSize = normalizeParkSearchPageSize(options.pageSize);
+    const queryConstraints = [orderBy("name"), limit(pageSize)];
+
+    if (options.startAfter) {
+      queryConstraints.push(startAfter(options.startAfter));
+    }
+
+    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
+    const parks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const predicate = buildParkSearchFilterPredicate(searchTerm);
+    const results = parks.filter(predicate);
+
+    return {
+      results: applyParkSearchPageLimit(results, options),
+      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
+      pageSize,
+      hasMore: snapshot.docs.length === pageSize
+    };
   } catch (error) {
     throw createServiceError(error, "Search parks failed.");
   }
@@ -168,43 +216,35 @@ async function filterParks(filterCriteria, options = {}) {
   try {
     const db = getDatabaseService();
     const collectionRef = collection(db, "parks");
-    const snapshot = await getDocs(query(collectionRef, limit(PARK_SEARCH_DEFAULTS.maxPageSize)));
-    
-    const results = snapshot.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter((park) => {
-        // Check age groups filter
-        if (filterCriteria.ageGroups && filterCriteria.ageGroups.length > 0) {
-          const parkHasAgeGroup = filterCriteria.ageGroups.some(
-            (group) => park.ageGroups?.[group] === true
-          );
-          if (!parkHasAgeGroup) return false;
-        }
-        
-        // Check fenced area filter
-        if (filterCriteria.fencedArea !== undefined && filterCriteria.fencedArea !== null) {
-          if (park.fencedArea !== filterCriteria.fencedArea) return false;
-        }
-        
-        // Check restrooms filter
-        if (filterCriteria.restrooms !== undefined && filterCriteria.restrooms !== null) {
-          if (park.restrooms !== filterCriteria.restrooms) return false;
-        }
-        
-        // Check shade availability filter
-        if (filterCriteria.shadeAvailable !== undefined && filterCriteria.shadeAvailable !== null) {
-          if (park.shadeAvailable !== filterCriteria.shadeAvailable) return false;
-        }
-        
-        // Check maintenance status filter
-        if (filterCriteria.maintenanceStatus) {
-          if (park.maintenanceStatus !== filterCriteria.maintenanceStatus) return false;
-        }
-        
-        return true;
-      });
-    
-    return applyParkSearchPageLimit(results, options);
+    const pageSize = normalizeParkSearchPageSize(options.pageSize);
+    const queryConstraints = [orderBy("name"), limit(pageSize)];
+
+    if (options.startAfter) {
+      queryConstraints.push(startAfter(options.startAfter));
+    }
+
+    if (filterCriteria.maintenanceStatus) {
+      queryConstraints.push(where("maintenanceStatus", "==", filterCriteria.maintenanceStatus));
+    }
+
+    ["fencedArea", "restrooms", "shadeAvailable"].forEach((field) => {
+      const value = filterCriteria[field];
+      if (value !== undefined && value !== null) {
+        queryConstraints.push(where(field, "==", value));
+      }
+    });
+
+    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
+    const parks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const predicate = buildParkSearchFilterPredicate(undefined, filterCriteria);
+    const results = parks.filter(predicate);
+
+    return {
+      results: applyParkSearchPageLimit(results, options),
+      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
+      pageSize,
+      hasMore: snapshot.docs.length === pageSize
+    };
   } catch (error) {
     throw createServiceError(error, "Filter parks failed.");
   }
@@ -218,53 +258,35 @@ async function searchAndFilterParks(searchTerm, filterCriteria, options = {}) {
   try {
     const db = getDatabaseService();
     const collectionRef = collection(db, "parks");
-    const snapshot = await getDocs(query(collectionRef, limit(PARK_SEARCH_DEFAULTS.maxPageSize)));
-    
-    const searchLower = searchTerm.toLowerCase();
-    const results = snapshot.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter((park) => {
-        // Apply search filter
-        if (searchTerm) {
-          const name = (park.name || "").toLowerCase();
-          const location = (park.location || "").toLowerCase();
-          if (!name.includes(searchLower) && !location.includes(searchLower)) {
-            return false;
-          }
-        }
-        
-        // Check age groups filter
-        if (filterCriteria.ageGroups && filterCriteria.ageGroups.length > 0) {
-          const parkHasAgeGroup = filterCriteria.ageGroups.some(
-            (group) => park.ageGroups?.[group] === true
-          );
-          if (!parkHasAgeGroup) return false;
-        }
-        
-        // Check fenced area filter
-        if (filterCriteria.fencedArea !== undefined && filterCriteria.fencedArea !== null) {
-          if (park.fencedArea !== filterCriteria.fencedArea) return false;
-        }
-        
-        // Check restrooms filter
-        if (filterCriteria.restrooms !== undefined && filterCriteria.restrooms !== null) {
-          if (park.restrooms !== filterCriteria.restrooms) return false;
-        }
-        
-        // Check shade availability filter
-        if (filterCriteria.shadeAvailable !== undefined && filterCriteria.shadeAvailable !== null) {
-          if (park.shadeAvailable !== filterCriteria.shadeAvailable) return false;
-        }
-        
-        // Check maintenance status filter
-        if (filterCriteria.maintenanceStatus) {
-          if (park.maintenanceStatus !== filterCriteria.maintenanceStatus) return false;
-        }
-        
-        return true;
-      });
-    
-    return applyParkSearchPageLimit(results, options);
+    const pageSize = normalizeParkSearchPageSize(options.pageSize);
+    const queryConstraints = [orderBy("name"), limit(pageSize)];
+
+    if (options.startAfter) {
+      queryConstraints.push(startAfter(options.startAfter));
+    }
+
+    if (filterCriteria.maintenanceStatus) {
+      queryConstraints.push(where("maintenanceStatus", "==", filterCriteria.maintenanceStatus));
+    }
+
+    ["fencedArea", "restrooms", "shadeAvailable"].forEach((field) => {
+      const value = filterCriteria[field];
+      if (value !== undefined && value !== null) {
+        queryConstraints.push(where(field, "==", value));
+      }
+    });
+
+    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
+    const parks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const predicate = buildParkSearchFilterPredicate(searchTerm, filterCriteria);
+    const results = parks.filter(predicate);
+
+    return {
+      results: applyParkSearchPageLimit(results, options),
+      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
+      pageSize,
+      hasMore: snapshot.docs.length === pageSize
+    };
   } catch (error) {
     throw createServiceError(error, "Search and filter parks failed.");
   }
@@ -291,11 +313,18 @@ async function queryParksPage(options = {}) {
     const db = getDatabaseService();
     const collectionRef = collection(db, "parks");
     const pageSize = normalizeParkSearchPageSize(options.pageSize);
-    const parksQuery = query(collectionRef, orderBy("name"), limit(pageSize));
+    const queryConstraints = [orderBy("name"), limit(pageSize)];
+
+    if (options.startAfter) {
+      queryConstraints.push(startAfter(options.startAfter));
+    }
+
+    const parksQuery = query(collectionRef, ...queryConstraints);
     const snapshot = await getDocs(parksQuery);
 
     return {
       results: mapParkSnapshot(snapshot),
+      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
       pageSize,
       hasMore: snapshot.docs.length === pageSize
     };

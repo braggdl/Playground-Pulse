@@ -45,7 +45,8 @@ const appState = {
   },
   parkQuery: {
     pageSize: PARK_SEARCH_DEFAULTS.pageSize,
-    hasMore: false
+    hasMore: false,
+    lastDocument: null
   },
   parkResults: [],
   isLoadingParks: false,
@@ -253,6 +254,11 @@ async function clearSearchAndFilters() {
     shadeAvailable: null,
     maintenanceStatus: null
   };
+  appState.parkQuery = {
+    pageSize: PARK_SEARCH_DEFAULTS.pageSize,
+    hasMore: false,
+    lastDocument: null
+  };
   appState.parkResults = [];
   appState.parksError = null;
   
@@ -283,6 +289,8 @@ async function executeSearchAndFilter() {
   try {
     appState.isLoadingParks = true;
     appState.parksError = null;
+    appState.parkQuery.lastDocument = null;
+    appState.parkQuery.hasMore = false;
     renderParkResults();
 
     const hasSearchTerm = appState.searchTerm && appState.searchTerm.trim().length > 0;
@@ -297,8 +305,13 @@ async function executeSearchAndFilter() {
       return;
     }
 
-    const results = await searchAndFilterParks(appState.searchTerm, appState.filterCriteria);
-    appState.parkResults = results;
+    const response = await searchAndFilterParks(appState.searchTerm, appState.filterCriteria, {
+      pageSize: appState.parkQuery.pageSize
+    });
+
+    appState.parkResults = response.results;
+    appState.parkQuery.lastDocument = response.lastDocument;
+    appState.parkQuery.hasMore = response.hasMore;
     appState.isLoadingParks = false;
     renderParkResults();
   } catch (error) {
@@ -402,6 +415,33 @@ async function refreshParkResultsAfterMutation() {
   renderParkResults();
 }
 
+async function loadMoreParkResults() {
+  if (!appState.parkQuery.hasMore || appState.isLoadingParks) {
+    return;
+  }
+
+  try {
+    appState.isLoadingParks = true;
+    appState.parksError = null;
+    renderParkResults();
+
+    const response = await searchAndFilterParks(appState.searchTerm, appState.filterCriteria, {
+      pageSize: appState.parkQuery.pageSize,
+      startAfter: appState.parkQuery.lastDocument
+    });
+
+    appState.parkResults = appState.parkResults.concat(response.results);
+    appState.parkQuery.lastDocument = response.lastDocument;
+    appState.parkQuery.hasMore = response.hasMore;
+  } catch (error) {
+    console.error("Load more parks failed:", error);
+    appState.parksError = error.message;
+  } finally {
+    appState.isLoadingParks = false;
+    renderParkResults();
+  }
+}
+
 function openCreateParkForm() {
   try {
     enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
@@ -492,7 +532,7 @@ function renderParkResults() {
   resultsContainer.innerHTML = "";
 
   // Loading state
-  if (appState.isLoadingParks) {
+  if (appState.isLoadingParks && appState.parkResults.length === 0) {
     resultsContainer.innerHTML = `
       <div class="state-loading">
         <div class="spinner"></div>
@@ -503,7 +543,7 @@ function renderParkResults() {
   }
 
   // Error state
-  if (appState.parksError) {
+  if (appState.parksError && appState.parkResults.length === 0) {
     resultsContainer.innerHTML = `
       <div class="state-error">
         <p class="error-message show">${escapeHtml(appState.parksError)}</p>
@@ -540,6 +580,18 @@ function renderParkResults() {
     </div>
   `).join("");
 
+  const loadMoreButton = appState.parkQuery.hasMore ? `
+      <div class="search-pagination">
+        <button class="btn btn-primary" onclick="window.appControllerExports.loadMoreParkResults()" ${appState.isLoadingParks ? 'disabled' : ''}>
+          ${appState.isLoadingParks ? 'Loading...' : 'Load more parks'}
+        </button>
+      </div>
+    ` : `
+      <div class="search-pagination">
+        <p class="end-of-results">${appState.parkResults.length > 0 ? 'End of results.' : ''}</p>
+      </div>
+    `;
+
   resultsContainer.innerHTML = `
     <div class="results-header">
       <p><strong>${appState.parkResults.length}</strong> park(s) found</p>
@@ -547,6 +599,7 @@ function renderParkResults() {
     <div class="park-results-list">
       ${resultsHTML}
     </div>
+    ${loadMoreButton}
   `;
 }
 
@@ -801,6 +854,7 @@ function initializeApp() {
       updateSearchTerm,
       updateFilterCriteria,
       clearSearchAndFilters,
+      loadMoreParkResults,
       openCreateParkForm,
       openEditParkForm,
       cancelParkForm,

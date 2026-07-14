@@ -515,22 +515,21 @@ main {
   margin: 0 auto 1rem;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.search-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
 }
 
-.state-loading p {
-  color: #666;
+.search-pagination .end-of-results {
+  color: #555;
   font-size: 0.95rem;
+  margin: 0.75rem 0;
 }
 
-/* Empty State */
-.state-empty {
-  text-align: center;
-  padding: 2rem;
-  background: #fffbea;
-  border-radius: 4px;
+.search-pagination .btn {
+  min-width: 180px;
+}
   border: 1px solid #ffe082;
 }
 
