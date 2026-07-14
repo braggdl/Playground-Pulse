@@ -6,6 +6,8 @@
 
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 import { initializeAuthController, handleLogout } from "./authController.js";
+import { USER_ROLES } from "../models/userModel.js";
+import { PARK_SEARCH_DEFAULTS } from "../constants/searchConstants.js";
 import {
   getFirebaseServices,
   initializeFirebaseServices
@@ -20,11 +22,19 @@ import {
 
 const appState = {
   isInitialized: false,
+  currentView: "",
+  // Workstream A: Auth and profile state.
   authReady: false,
   currentUser: null,
   userRole: null,
-  currentView: "",
-  // Phase 3: Search and filter state
+  authStatusMessage: null,
+  // Workstream B: Crowd reporting state.
+  crowdReportSubmitting: false,
+  crowdReportError: null,
+  crowdReportSuccess: null,
+  lastCrowdReportWindowKey: null,
+  latestBusyLevel: null,
+  // Workstream C: Search and filter state.
   searchTerm: "",
   filterCriteria: {
     ageGroups: [],
@@ -33,9 +43,14 @@ const appState = {
     shadeAvailable: null,
     maintenanceStatus: null
   },
+  parkQuery: {
+    pageSize: PARK_SEARCH_DEFAULTS.pageSize,
+    hasMore: false
+  },
   parkResults: [],
   isLoadingParks: false,
   parksError: null,
+  // Shared Sprint 1 and Phase 1 park management state.
   selectedPark: null,
   parkFormMode: null,
   parkFormRecordId: null,
@@ -100,17 +115,17 @@ function getCurrentUserRole() {
 
 function canCreateParkRecord() {
   const role = getCurrentUserRole();
-  return role === "Park Admin" || role === "Site Admin";
+  return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
 }
 
 function canEditParkRecord() {
   const role = getCurrentUserRole();
-  return role === "Park Admin" || role === "Site Admin";
+  return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
 }
 
 function canDeleteParkRecord() {
   const role = getCurrentUserRole();
-  return role === "Site Admin";
+  return role === USER_ROLES.SITE_ADMIN;
 }
 
 function enforceRoleOrThrow(requiredRoles) {
@@ -182,6 +197,7 @@ function applyRouteAccessRules(firebaseUser) {
 async function handleAuthStateChanged(firebaseUser) {
   appState.authReady = false;
   appState.currentUser = firebaseUser;
+  appState.authStatusMessage = firebaseUser ? null : "Signed out";
 
   // Phase 2: Load user role from Firestore when user logs in
   if (firebaseUser) {
@@ -388,7 +404,7 @@ async function refreshParkResultsAfterMutation() {
 
 function openCreateParkForm() {
   try {
-    enforceRoleOrThrow(["Park Admin", "Site Admin"]);
+    enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
     appState.parkFormMode = "create";
     appState.parkFormRecordId = null;
     appState.parkFormError = null;
@@ -402,7 +418,7 @@ function openCreateParkForm() {
 
 function openEditParkForm() {
   try {
-    enforceRoleOrThrow(["Park Admin", "Site Admin"]);
+    enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
 
     if (!appState.selectedPark?.id) {
       throw new Error("Select a park before editing.");
@@ -426,7 +442,7 @@ function cancelParkForm() {
 
 async function submitParkForm() {
   try {
-    enforceRoleOrThrow(["Park Admin", "Site Admin"]);
+    enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
 
     if (!appState.parkFormMode) {
       throw new Error("No park form is active.");

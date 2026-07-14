@@ -26,12 +26,16 @@ function initializeFirebaseServices() {
     return firebaseServices;
   }
 
-  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
+  try {
+    const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
 
-  firebaseServices = { app, auth, db };
-  return firebaseServices;
+    firebaseServices = { app, auth, db };
+    return firebaseServices;
+  } catch (error) {
+    throw new Error("Firebase services could not be initialized.");
+  }
 }
 
 function getFirebaseServices() {

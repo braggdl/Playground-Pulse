@@ -4,6 +4,12 @@
   Add validation and transformation helpers for park data here.
 */
 
+import {
+  BUSY_LEVEL_LABELS,
+  getBusyLevelLabel,
+  getReportWindowKey
+} from "../constants/reportConstants.js";
+
 const MAINTENANCE_STATUS = {
   GOOD: "good",
   NEEDS_ATTENTION: "needs_attention",
@@ -19,6 +25,10 @@ function isValidMaintenanceStatus(status) {
 
 function createParkModel(partialPark = {}) {
   const maintenanceStatus = partialPark.maintenanceStatus || MAINTENANCE_STATUS.UNKNOWN;
+  const busyLevelScore = Number.isFinite(partialPark.busyLevel?.score)
+    ? partialPark.busyLevel.score
+    : null;
+  const now = new Date().toISOString();
 
   return {
     id: partialPark.id || "",
@@ -35,10 +45,21 @@ function createParkModel(partialPark = {}) {
     maintenanceStatus: isValidMaintenanceStatus(maintenanceStatus)
       ? maintenanceStatus
       : MAINTENANCE_STATUS.UNKNOWN,
+    busyLevel: {
+      score: busyLevelScore,
+      label: partialPark.busyLevel?.label || getBusyLevelLabel(busyLevelScore),
+      updatedAt: partialPark.busyLevel?.updatedAt || null
+    },
+    crowdReporting: {
+      enabled: partialPark.crowdReporting?.enabled ?? true,
+      reportCountLastHour: Number(partialPark.crowdReporting?.reportCountLastHour || 0),
+      lastReportedAt: partialPark.crowdReporting?.lastReportedAt || null,
+      latestWindowKey: partialPark.crowdReporting?.latestWindowKey || getReportWindowKey(now)
+    },
     safetyNotes: partialPark.safetyNotes || "",
     amenitiesNotes: partialPark.amenitiesNotes || "",
-    createdAt: partialPark.createdAt || new Date().toISOString(),
-    updatedAt: partialPark.updatedAt || new Date().toISOString()
+    createdAt: partialPark.createdAt || now,
+    updatedAt: partialPark.updatedAt || now
   };
 }
 

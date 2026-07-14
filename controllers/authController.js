@@ -4,6 +4,7 @@
   Add DOM event listeners and form handling logic here.
 */
 
+import { PASSWORD_POLICY, validatePasswordStrength } from "../constants/authConstants.js";
 import { login, logout, registerUser } from "../services/authService.js";
 import { createUserRecord } from "../services/databaseService.js";
 import { createUserModel } from "../models/userModel.js";
@@ -65,7 +66,7 @@ function validateEmail(email) {
 }
 
 function validatePassword(password) {
-  return password && password.length >= 6;
+  return validatePasswordStrength(password).isValid;
 }
 
 function validateLoginForm() {
@@ -84,11 +85,6 @@ function validateLoginForm() {
 
   if (!validateEmail(email)) {
     showError("Please enter a valid email address");
-    return false;
-  }
-
-  if (!validatePassword(password)) {
-    showError("Password must be at least 6 characters");
     return false;
   }
 
@@ -121,7 +117,7 @@ function validateRegisterForm() {
   }
 
   if (!validatePassword(password)) {
-    showError("Password must be at least 6 characters");
+    showError(validatePasswordStrength(password).errors[0]);
     return false;
   }
 
@@ -201,7 +197,7 @@ async function handleRegister() {
 
   try {
     // Call authService to create Firebase user
-    const firebaseUser = await registerUser(email, password);
+    const firebaseUser = await registerUser(email, password, { displayName });
 
     // Create user record in Firestore
     const userRecord = createUserModel({
@@ -218,14 +214,7 @@ async function handleRegister() {
   } catch (error) {
     setButtonLoading("register-btn", false);
 
-    // Map Firebase error codes to user-friendly messages
-    if (error.message.includes("auth/email-already-in-use")) {
-      showError("Email already registered. Please log in or use a different email.");
-    } else if (error.message.includes("auth/weak-password")) {
-      showError("Password is too weak. Please use a stronger password.");
-    } else if (error.message.includes("auth/invalid-email")) {
-      showError("Invalid email address.");
-    } else if (error.message.includes("Create user record failed")) {
+    if (error.message.includes("Create user record failed")) {
       showError("Account was created, but profile setup failed. Please contact support or retry.");
     } else {
       showError(error.message || "Registration failed. Please try again.");
