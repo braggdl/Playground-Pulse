@@ -9,14 +9,20 @@ import { initializeAuthController, handleLogout } from "./authController.js";
 import { USER_ROLES } from "../models/userModel.js";
 import { PARK_SEARCH_DEFAULTS } from "../constants/searchConstants.js";
 import {
+  calculateBusyLevelFromReports,
+  getParkById,
+  getRecentCrowdReportsForPark,
+  submitCrowdReport
+} from "../services/databaseService.js";
+import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "../services/firebase-config.js";
 import {
   createParkRecord,
   editParkRecord,
-  getParkById,
   readRecords,
+  updateRecord,
   searchAndFilterParks
 } from "../services/databaseService.js";
 
@@ -32,6 +38,7 @@ const appState = {
   crowdReportSubmitting: false,
   crowdReportError: null,
   crowdReportSuccess: null,
+  crowdReportLevel: "1",
   lastCrowdReportWindowKey: null,
   latestBusyLevel: null,
   // Workstream C: Search and filter state.
@@ -148,6 +155,226 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function formatDisplayDateTime(value) {
+  if (!value) {
+    return "Not reported yet";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Not reported yet";
+  }
+
+  return date.toLocaleString();
+}
+
+function getBusyLevelTone(label) {
+  switch (label) {
+    case "Low":
+      return "busy-level-low";
+    case "Moderate":
+      return "busy-level-moderate";
+    case "Busy":
+      return "busy-level-busy";
+    case "Very Busy":
+      return "busy-level-very-busy";
+    default:
+      return "busy-level-unknown";
+  }
+}
+
+function renderBusyLevelBadge(busyLevel = {}) {
+  const score = Number.isFinite(busyLevel.score) ? busyLevel.score : null;
+  const label = busyLevel.label || "Unknown";
+  const toneClass = getBusyLevelTone(label);
+  const scoreSuffix = score !== null ? ` <span class="busy-level-score">${escapeHtml(String(score))}</span>` : "";
+
+  return `<span class="busy-level-pill ${toneClass}">${escapeHtml(label)}${scoreSuffix}</span>`;
+}
+
+function clearCrowdReportState() {
+  appState.crowdReportSubmitting = false;
+  appState.crowdReportError = null;
+  appState.crowdReportSuccess = null;
+  appState.crowdReportLevel = "1";
+  appState.latestBusyLevel = null;
+  appState.lastCrowdReportWindowKey = null;
+}
+
+function updateCrowdReportLevel(level) {
+  appState.crowdReportLevel = String(level || "1");
+  appState.crowdReportError = null;
+  appState.crowdReportSuccess = null;
+  renderCrowdReportPanel();
+}
+
+async function loadCrowdReportStateForPark(parkId) {
+  const [park, recentReports] = await Promise.all([
+    getParkById(parkId),
+    getRecentCrowdReportsForPark(parkId)
+  ]);
+
+  const busyLevel = calculateBusyLevelFromReports(recentReports);
+  const latestReport = recentReports[0] || null;
+
+  const enrichedPark = {
+    ...park,
+    busyLevel: {
+      score: busyLevel.score,
+      label: busyLevel.label,
+      updatedAt: latestReport?.reportedAt || null
+    },
+    crowdReporting: {
+      enabled: true,
+      reportCountLastHour: busyLevel.reportCount,
+      lastReportedAt: latestReport?.reportedAt || null,
+      latestWindowKey: latestReport?.windowKey || null
+    }
+  };
+
+  appState.latestBusyLevel = enrichedPark.busyLevel;
+  appState.lastCrowdReportWindowKey = latestReport?.windowKey || null;
+
+  return enrichedPark;
+}
+
+function syncParkResultsWithSelectedPark(updatedPark) {
+  if (!updatedPark?.id || !Array.isArray(appState.parkResults) || appState.parkResults.length === 0) {
+    return;
+  }
+
+  appState.parkResults = appState.parkResults.map((park) => {
+    if (park.id !== updatedPark.id) {
+      return park;
+    }
+
+    return {
+      ...park,
+      busyLevel: updatedPark.busyLevel,
+      crowdReporting: updatedPark.crowdReporting
+    };
+  });
+}
+
+async function persistCrowdReportParkState(updatedPark) {
+  if (!updatedPark?.id) {
+    return updatedPark;
+  }
+
+  const payload = {
+    busyLevel: updatedPark.busyLevel,
+    crowdReporting: updatedPark.crowdReporting,
+    updatedAt: new Date().toISOString()
+  };
+
+  await updateRecord("parks", updatedPark.id, payload);
+
+  return {
+    ...updatedPark,
+    ...payload
+  };
+}
+
+function renderCrowdReportPanel() {
+  const reportContainer = document.getElementById("crowd-report-container");
+  if (!reportContainer) {
+    return;
+  }
+
+  if (!isAuthenticated() || !appState.selectedPark) {
+    reportContainer.innerHTML = "";
+    return;
+  }
+
+  const park = appState.selectedPark;
+  const busyLevel = park.busyLevel || {};
+  const reportCount = park.crowdReporting?.reportCountLastHour || 0;
+  const lastReportedAt = park.crowdReporting?.lastReportedAt || null;
+  const selectedLevel = appState.crowdReportLevel || "1";
+
+  reportContainer.innerHTML = `
+    <section class="crowd-report-panel">
+      <div class="crowd-report-header">
+        <h3>Report Crowd Level</h3>
+        <div class="crowd-report-busy-summary">
+          ${renderBusyLevelBadge(busyLevel)}
+          <p class="crowd-report-meta">${reportCount} report(s) in the last hour</p>
+          <p class="crowd-report-meta">Last update: ${escapeHtml(formatDisplayDateTime(lastReportedAt))}</p>
+        </div>
+      </div>
+
+      ${appState.crowdReportError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.crowdReportError)}</p>` : ""}
+      ${appState.crowdReportSuccess ? `<p class="crowd-report-message crowd-report-success">${escapeHtml(appState.crowdReportSuccess)}</p>` : ""}
+
+      <form class="crowd-report-form" onsubmit="event.preventDefault(); window.appControllerExports.submitCrowdReportFromSelection();">
+        <div class="form-group">
+          <label for="crowd-report-level">Current Crowd Level</label>
+          <select id="crowd-report-level" onchange="window.appControllerExports.updateCrowdReportLevel(this.value)">
+            <option value="1" ${selectedLevel === "1" ? "selected" : ""}>1 - Low</option>
+            <option value="2" ${selectedLevel === "2" ? "selected" : ""}>2 - Moderate</option>
+            <option value="3" ${selectedLevel === "3" ? "selected" : ""}>3 - Busy</option>
+            <option value="4" ${selectedLevel === "4" ? "selected" : ""}>4 - Very Busy</option>
+          </select>
+        </div>
+
+        <div class="crowd-report-actions">
+          <button type="submit" class="btn btn-primary" ${appState.crowdReportSubmitting ? "disabled" : ""}>
+            ${appState.crowdReportSubmitting ? "Submitting..." : "Submit Crowd Report"}
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="window.appControllerExports.clearCrowdReportSelection()" ${appState.crowdReportSubmitting ? "disabled" : ""}>
+            Clear Report
+          </button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+async function submitCrowdReportFromSelection() {
+  try {
+    if (!isAuthenticated()) {
+      throw new Error("Please sign in to submit a crowd report.");
+    }
+
+    if (!appState.selectedPark?.id) {
+      throw new Error("Select a park before submitting a crowd report.");
+    }
+
+    appState.crowdReportSubmitting = true;
+    appState.crowdReportError = null;
+    appState.crowdReportSuccess = null;
+    renderCrowdReportPanel();
+
+    const crowdLevel = Number(appState.crowdReportLevel || "1");
+    const result = await submitCrowdReport(appState.selectedPark.id, appState.currentUser.uid, crowdLevel);
+
+    if (result.isDuplicate) {
+      appState.crowdReportError = result.message;
+      appState.crowdReportSubmitting = false;
+      renderCrowdReportPanel();
+      return;
+    }
+
+    appState.crowdReportSuccess = result.message;
+    const refreshedPark = await loadCrowdReportStateForPark(appState.selectedPark.id);
+    appState.selectedPark = await persistCrowdReportParkState(refreshedPark);
+    syncParkResultsWithSelectedPark(appState.selectedPark);
+    appState.crowdReportSubmitting = false;
+    renderParkDetail();
+    renderCrowdReportPanel();
+    renderParkResults();
+  } catch (error) {
+    appState.crowdReportSubmitting = false;
+    appState.crowdReportError = formatAppError(error, "Failed to submit crowd report.");
+    renderCrowdReportPanel();
+  }
+}
+
+function clearCrowdReportSelection() {
+  clearCrowdReportState();
+  renderCrowdReportPanel();
+}
+
 async function loadUserRole(uid) {
   try {
     const users = await readRecords("users", { uid: uid });
@@ -218,6 +445,7 @@ async function handleAuthStateChanged(firebaseUser) {
   if (appState.currentView === "dashboard") {
     renderParkForm();
     updateDashboardManagementControls();
+    renderCrowdReportPanel();
   }
 }
 
@@ -314,10 +542,15 @@ async function executeSearchAndFilter() {
  */
 async function selectParkForDetail(parkId) {
   try {
-    appState.selectedPark = await getParkById(parkId);
+    appState.selectedPark = await loadCrowdReportStateForPark(parkId);
     appState.parkFormError = null;
     appState.parkFormSuccess = null;
+    appState.crowdReportError = null;
+    appState.crowdReportSuccess = null;
+    syncParkResultsWithSelectedPark(appState.selectedPark);
+    renderParkResults();
     renderParkDetail();
+    renderCrowdReportPanel();
   } catch (error) {
     console.error("Failed to load park detail:", error);
     appState.parksError = formatAppError(error, "Failed to load park detail.");
@@ -330,7 +563,9 @@ async function selectParkForDetail(parkId) {
  */
 function clearParkDetail() {
   appState.selectedPark = null;
+  clearCrowdReportState();
   renderParkDetail();
+  renderCrowdReportPanel();
 }
 
 function updateDashboardManagementControls() {
@@ -528,6 +763,9 @@ function renderParkResults() {
     <div class="park-card" onclick="window.appControllerExports.selectParkForDetail('${park.id}')">
       <h3>${escapeHtml(park.name)}</h3>
       <p class="park-location">${escapeHtml(park.location)}</p>
+      <div class="park-busy-level">
+        ${renderBusyLevelBadge(park.busyLevel || {})}
+      </div>
       <div class="park-amenities">
         ${park.ageGroups?.toddler ? '<span class="amenity-tag">Toddler</span>' : ''}
         ${park.ageGroups?.kid ? '<span class="amenity-tag">Kid</span>' : ''}
@@ -576,6 +814,15 @@ function renderParkDetail() {
         <p><strong>Safety Notes:</strong> ${escapeHtml(park.safetyNotes || 'No safety notes available.')}</p>
         <p><strong>Amenities:</strong> ${escapeHtml(park.amenitiesNotes || 'No amenity details available.')}</p>
         <p><strong>Maintenance Status:</strong> ${escapeHtml(park.maintenanceStatus || 'Unknown')}</p>
+      </section>
+
+      <section class="detail-section crowd-report-summary">
+        <h3>Crowd Level</h3>
+        <div class="crowd-report-summary-row">
+          ${renderBusyLevelBadge(park.busyLevel || {})}
+          <p>${park.crowdReporting?.reportCountLastHour || 0} report(s) in the last hour</p>
+        </div>
+        <p class="crowd-report-meta">Last update: ${escapeHtml(formatDisplayDateTime(park.crowdReporting?.lastReportedAt || null))}</p>
       </section>
       
       <section class="detail-section">
@@ -689,6 +936,7 @@ function initializeViewController() {
   if (appState.currentView === "dashboard") {
     initializeParkSearchAndFilter();
     applyInitialDashboardSearchFromUrl();
+    renderCrowdReportPanel();
   }
 }
 
@@ -804,7 +1052,10 @@ function initializeApp() {
       openCreateParkForm,
       openEditParkForm,
       cancelParkForm,
-      submitParkForm
+      submitParkForm,
+      updateCrowdReportLevel,
+      submitCrowdReportFromSelection,
+      clearCrowdReportSelection
     };
     
     return appState;
