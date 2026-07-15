@@ -9,6 +9,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -62,6 +63,154 @@ function mapParkSnapshot(snapshot) {
 function applyParkSearchPageLimit(parks, options = {}) {
   const pageSize = normalizeParkSearchPageSize(options.pageSize);
   return parks.slice(0, pageSize);
+}
+
+function normalizeSearchPrefix(searchTerm = "") {
+  return String(searchTerm || "").trim();
+}
+
+function getSearchCursorByField(startAfterCursor, field) {
+  if (!startAfterCursor || typeof startAfterCursor !== "object") {
+    return null;
+  }
+
+  return startAfterCursor[field] || null;
+}
+
+function dedupeParks(parks = []) {
+  const byId = new Map();
+  parks.forEach((park) => {
+    if (park?.id && !byId.has(park.id)) {
+      byId.set(park.id, park);
+    }
+  });
+
+  return Array.from(byId.values());
+}
+
+function sortParksByName(parks = []) {
+  return parks.slice().sort((left, right) => {
+    const leftName = (left.name || "").toLowerCase();
+    const rightName = (right.name || "").toLowerCase();
+    return leftName.localeCompare(rightName);
+  });
+}
+
+async function queryParksByPrefixField(field, searchPrefix, options = {}) {
+  const db = getDatabaseService();
+  const collectionRef = collection(db, "parks");
+  const pageSize = normalizeParkSearchPageSize(options.pageSize);
+  const queryConstraints = [
+    where(field, ">=", searchPrefix),
+    where(field, "<=", `${searchPrefix}\uf8ff`),
+    orderBy(field),
+    limit(pageSize)
+  ];
+
+  const startAfterDoc = getSearchCursorByField(options.startAfter, field);
+  if (startAfterDoc) {
+    queryConstraints.push(startAfter(startAfterDoc));
+  }
+
+  const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
+
+  return {
+    parks: snapshot.docs.map((parkDocument) => ({ id: parkDocument.id, ...parkDocument.data() })),
+    lastDocument: snapshot.docs[snapshot.docs.length - 1] || startAfterDoc || null,
+    hasMore: snapshot.docs.length === pageSize
+  };
+}
+
+async function queryParksBySearchTerm(searchTerm, options = {}) {
+  const normalizedPrefix = normalizeSearchPrefix(searchTerm);
+  if (!normalizedPrefix) {
+    return {
+      results: [],
+      lastDocument: null,
+      pageSize: normalizeParkSearchPageSize(options.pageSize),
+      hasMore: false
+    };
+  }
+
+  const [nameQuery, locationQuery] = await Promise.all([
+    queryParksByPrefixField("name", normalizedPrefix, options),
+    queryParksByPrefixField("location", normalizedPrefix, options)
+  ]);
+
+  const mergedResults = sortParksByName(dedupeParks([...nameQuery.parks, ...locationQuery.parks]));
+  const pagedResults = applyParkSearchPageLimit(mergedResults, options);
+  const enrichedResults = await enrichParksWithRecentCrowdState(pagedResults);
+
+  return {
+    results: enrichedResults,
+    lastDocument: {
+      name: nameQuery.lastDocument,
+      location: locationQuery.lastDocument
+    },
+    pageSize: normalizeParkSearchPageSize(options.pageSize),
+    hasMore: nameQuery.hasMore || locationQuery.hasMore
+  };
+}
+
+async function queryParksWithClientFiltering(searchTerm, filterCriteria = {}, options = {}) {
+  const db = getDatabaseService();
+  const collectionRef = collection(db, "parks");
+  const pageSize = normalizeParkSearchPageSize(options.pageSize);
+  const batchSize = Math.max(pageSize, PARK_SEARCH_DEFAULTS.pageSize);
+  const predicate = buildParkSearchFilterPredicate(searchTerm, filterCriteria);
+
+  let cursor = options.startAfter || null;
+  let results = [];
+  let reachedRequestedPage = false;
+  let hasMore = false;
+
+  while (!reachedRequestedPage) {
+    const queryConstraints = [orderBy("name"), limit(batchSize)];
+
+    if (cursor) {
+      queryConstraints.push(startAfter(cursor));
+    }
+
+    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
+    if (snapshot.empty) {
+      hasMore = false;
+      break;
+    }
+
+    for (const parkDocument of snapshot.docs) {
+      cursor = parkDocument;
+      const park = { id: parkDocument.id, ...parkDocument.data() };
+
+      if (predicate(park)) {
+        results.push(park);
+      }
+
+      if (results.length === pageSize) {
+        reachedRequestedPage = true;
+        hasMore = true;
+        break;
+      }
+    }
+
+    if (reachedRequestedPage) {
+      break;
+    }
+
+    if (snapshot.docs.length < batchSize) {
+      hasMore = false;
+      break;
+    }
+  }
+
+  const pagedResults = applyParkSearchPageLimit(results, options);
+  const enrichedResults = await enrichParksWithRecentCrowdState(pagedResults);
+
+  return {
+    results: enrichedResults,
+    lastDocument: cursor,
+    pageSize,
+    hasMore
+  };
 }
 
 function buildParkSearchFilterPredicate(searchTerm, filterCriteria = {}) {
@@ -183,26 +332,7 @@ async function deleteRecord(collectionName, recordId) {
  */
 async function searchParks(searchTerm, options = {}) {
   try {
-    const db = getDatabaseService();
-    const collectionRef = collection(db, "parks");
-    const pageSize = normalizeParkSearchPageSize(options.pageSize);
-    const queryConstraints = [orderBy("name"), limit(pageSize)];
-
-    if (options.startAfter) {
-      queryConstraints.push(startAfter(options.startAfter));
-    }
-
-    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
-    const parks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    const predicate = buildParkSearchFilterPredicate(searchTerm);
-    const results = parks.filter(predicate);
-
-    return {
-      results: applyParkSearchPageLimit(results, options),
-      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
-      pageSize,
-      hasMore: snapshot.docs.length === pageSize
-    };
+    return queryParksBySearchTerm(searchTerm, options);
   } catch (error) {
     throw createServiceError(error, "Search parks failed.");
   }
@@ -214,37 +344,7 @@ async function searchParks(searchTerm, options = {}) {
  */
 async function filterParks(filterCriteria, options = {}) {
   try {
-    const db = getDatabaseService();
-    const collectionRef = collection(db, "parks");
-    const pageSize = normalizeParkSearchPageSize(options.pageSize);
-    const queryConstraints = [orderBy("name"), limit(pageSize)];
-
-    if (options.startAfter) {
-      queryConstraints.push(startAfter(options.startAfter));
-    }
-
-    if (filterCriteria.maintenanceStatus) {
-      queryConstraints.push(where("maintenanceStatus", "==", filterCriteria.maintenanceStatus));
-    }
-
-    ["fencedArea", "restrooms", "shadeAvailable"].forEach((field) => {
-      const value = filterCriteria[field];
-      if (value !== undefined && value !== null) {
-        queryConstraints.push(where(field, "==", value));
-      }
-    });
-
-    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
-    const parks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    const predicate = buildParkSearchFilterPredicate(undefined, filterCriteria);
-    const results = parks.filter(predicate);
-
-    return {
-      results: applyParkSearchPageLimit(results, options),
-      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
-      pageSize,
-      hasMore: snapshot.docs.length === pageSize
-    };
+    return queryParksWithClientFiltering(undefined, filterCriteria, options);
   } catch (error) {
     throw createServiceError(error, "Filter parks failed.");
   }
@@ -256,37 +356,20 @@ async function filterParks(filterCriteria, options = {}) {
  */
 async function searchAndFilterParks(searchTerm, filterCriteria, options = {}) {
   try {
-    const db = getDatabaseService();
-    const collectionRef = collection(db, "parks");
-    const pageSize = normalizeParkSearchPageSize(options.pageSize);
-    const queryConstraints = [orderBy("name"), limit(pageSize)];
+    const hasSearchTerm = Boolean(normalizeSearchPrefix(searchTerm));
 
-    if (options.startAfter) {
-      queryConstraints.push(startAfter(options.startAfter));
+    if (hasSearchTerm) {
+      const searchResponse = await queryParksBySearchTerm(searchTerm, options);
+      const predicate = buildParkSearchFilterPredicate(undefined, filterCriteria || {});
+      const filteredResults = searchResponse.results.filter(predicate);
+
+      return {
+        ...searchResponse,
+        results: filteredResults
+      };
     }
 
-    if (filterCriteria.maintenanceStatus) {
-      queryConstraints.push(where("maintenanceStatus", "==", filterCriteria.maintenanceStatus));
-    }
-
-    ["fencedArea", "restrooms", "shadeAvailable"].forEach((field) => {
-      const value = filterCriteria[field];
-      if (value !== undefined && value !== null) {
-        queryConstraints.push(where(field, "==", value));
-      }
-    });
-
-    const snapshot = await getDocs(query(collectionRef, ...queryConstraints));
-    const parks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    const predicate = buildParkSearchFilterPredicate(searchTerm, filterCriteria);
-    const results = parks.filter(predicate);
-
-    return {
-      results: applyParkSearchPageLimit(results, options),
-      lastDocument: snapshot.docs[snapshot.docs.length - 1] || null,
-      pageSize,
-      hasMore: snapshot.docs.length === pageSize
-    };
+    return queryParksWithClientFiltering(searchTerm, filterCriteria, options);
   } catch (error) {
     throw createServiceError(error, "Search and filter parks failed.");
   }
@@ -297,12 +380,15 @@ async function searchAndFilterParks(searchTerm, filterCriteria, options = {}) {
  */
 async function getParkById(parkId) {
   try {
-    const parks = await readRecords("parks", {});
-    const park = parks.find((p) => p.id === parkId);
-    if (!park) {
+    const db = getDatabaseService();
+    const parkRef = doc(db, "parks", parkId);
+    const parkSnapshot = await getDoc(parkRef);
+
+    if (!parkSnapshot.exists()) {
       throw new Error(`Park with ID ${parkId} not found`);
     }
-    return park;
+
+    return { id: parkSnapshot.id, ...parkSnapshot.data() };
   } catch (error) {
     throw createServiceError(error, "Get park by ID failed.");
   }
@@ -340,13 +426,14 @@ async function getRecentCrowdReportsForPark(parkId, minutes = CROWD_REPORT_POLIC
     const windowStart = new Date(Date.now() - (minutes * 60 * 1000)).toISOString();
     const reportsQuery = query(
       collectionRef,
-      where("parkId", "==", parkId),
-      where("reportedAt", ">=", windowStart),
-      orderBy("reportedAt", "desc")
+      where("parkId", "==", parkId)
     );
     const snapshot = await getDocs(reportsQuery);
 
-    return snapshot.docs.map((reportDocument) => ({ id: reportDocument.id, ...reportDocument.data() }));
+    return snapshot.docs
+      .map((reportDocument) => ({ id: reportDocument.id, ...reportDocument.data() }))
+      .filter((report) => (report.reportedAt || "") >= windowStart)
+      .sort((a, b) => (b.reportedAt || "").localeCompare(a.reportedAt || ""));
   } catch (error) {
     throw createServiceError(error, "Get recent crowd reports failed.");
   }
@@ -380,6 +467,37 @@ function calculateBusyLevelFromReports(reports = []) {
     label: getBusyLevelLabel(averageScore),
     reportCount: scores.length
   };
+}
+
+async function enrichParksWithRecentCrowdState(parks = []) {
+  if (!Array.isArray(parks) || parks.length === 0) {
+    return [];
+  }
+
+  const parksWithCrowdState = await Promise.all(parks.map(async (park) => {
+    const reports = await getRecentCrowdReportsForPark(park.id);
+    const busyLevel = calculateBusyLevelFromReports(reports);
+    const latestReport = reports[0] || null;
+    const fallbackBusyLevel = park.busyLevel || {};
+    const fallbackCrowdReporting = park.crowdReporting || {};
+
+    return {
+      ...park,
+      busyLevel: {
+        score: busyLevel.score ?? fallbackBusyLevel.score ?? null,
+        label: busyLevel.score !== null ? busyLevel.label : (fallbackBusyLevel.label || "Unknown"),
+        updatedAt: latestReport?.reportedAt || fallbackBusyLevel.updatedAt || null
+      },
+      crowdReporting: {
+        enabled: true,
+        reportCountLastHour: reports.length ? busyLevel.reportCount : Number(fallbackCrowdReporting.reportCountLastHour || 0),
+        lastReportedAt: latestReport?.reportedAt || fallbackCrowdReporting.lastReportedAt || null,
+        latestWindowKey: latestReport?.windowKey || fallbackCrowdReporting.latestWindowKey || null
+      }
+    };
+  }));
+
+  return parksWithCrowdState;
 }
 
 async function submitCrowdReport(parkId, userId, crowdLevel, reportedAt = new Date().toISOString()) {

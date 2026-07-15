@@ -210,26 +210,33 @@ function updateCrowdReportLevel(level) {
 }
 
 async function loadCrowdReportStateForPark(parkId) {
-  const [park, recentReports] = await Promise.all([
-    getParkById(parkId),
-    getRecentCrowdReportsForPark(parkId)
-  ]);
+  const park = await getParkById(parkId);
+  let recentReports = [];
+
+  try {
+    recentReports = await getRecentCrowdReportsForPark(parkId);
+  } catch (error) {
+    // Keep park detail usable even when crowd-report query/indexes are unavailable.
+    console.warn("Crowd report enrichment unavailable for selected park:", error);
+  }
 
   const busyLevel = calculateBusyLevelFromReports(recentReports);
   const latestReport = recentReports[0] || null;
+  const fallbackBusyLevel = park.busyLevel || {};
+  const fallbackCrowdReporting = park.crowdReporting || {};
 
   const enrichedPark = {
     ...park,
     busyLevel: {
-      score: busyLevel.score,
-      label: busyLevel.label,
-      updatedAt: latestReport?.reportedAt || null
+      score: busyLevel.score ?? fallbackBusyLevel.score ?? null,
+      label: busyLevel.score !== null ? busyLevel.label : (fallbackBusyLevel.label || "Unknown"),
+      updatedAt: latestReport?.reportedAt || fallbackBusyLevel.updatedAt || null
     },
     crowdReporting: {
       enabled: true,
-      reportCountLastHour: busyLevel.reportCount,
-      lastReportedAt: latestReport?.reportedAt || null,
-      latestWindowKey: latestReport?.windowKey || null
+      reportCountLastHour: recentReports.length ? busyLevel.reportCount : Number(fallbackCrowdReporting.reportCountLastHour || 0),
+      lastReportedAt: latestReport?.reportedAt || fallbackCrowdReporting.lastReportedAt || null,
+      latestWindowKey: latestReport?.windowKey || fallbackCrowdReporting.latestWindowKey || null
     }
   };
 
@@ -981,7 +988,7 @@ function renderParkForm() {
 }
 
 function initializeViewController() {
-  if (appState.currentView === "login") {
+  if (appState.currentView === "login" || appState.currentView === "profile") {
     initializeAuthController();
   }
 
