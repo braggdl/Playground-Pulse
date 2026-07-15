@@ -98,21 +98,24 @@ Known setup caution:
 - Added database service seams for park paging, crowd-report submission, recent crowd-report reads, and busy-level calculation.
 - Partitioned `appState` into auth/profile, crowd-reporting, and search/discovery sections to reduce controller merge conflicts.
 
-### Sprint 2 Phase 2 Pickup Points
+### Sprint 2 Phase 2 Workstream B (Complete)
+- Workstream B implementation is complete against the current phase scope.
+- Dashboard crowd-report controls render for authenticated users with a selected park.
+- Crowd-report submission is wired through the existing database seam with duplicate-block feedback.
+- Park detail and result cards surface busy-level output and refreshed crowd-report state.
+- B-scoped dashboard styles are in place for report form, badge, and feedback states.
+
+### Sprint 2 Remaining Phase 2 Pickup Points
 Workstream A: Account Security and Identity
 - Start in `services/authService.js` with the new reset-password, reauthentication, and password-update APIs.
 - Wire login and profile UI flows in `views/login.html` and `views/profile.html`.
 - Finish controller handlers in `controllers/authController.js` for forgot-password and profile updates.
 
-Workstream B: Crowd Reporting Pipeline
-- Start in `services/databaseService.js` with `submitCrowdReport()`, `getRecentCrowdReportsForPark()`, and `calculateBusyLevelFromReports()`.
-- Wire crowd-report submission and busy-level rendering paths in `controllers/appController.js`.
-- Add the crowd-report UI and result messaging in `views/dashboard.html`.
-
 Workstream C: Efficient Search Results
 - Start in `services/databaseService.js` with `queryParksPage()` and the search/pagination seams.
 - Wire incremental search rendering and state updates in `controllers/appController.js`.
 - Add loading, empty, retry, and pagination UI behavior in `views/dashboard.html` and `styles/main.css`.
+
 
 ### Sprint 2 Phase 2-4 Snapshot (Planned)
 Phase 2:

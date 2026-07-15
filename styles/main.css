@@ -307,6 +307,138 @@ main {
 }
 
 /* ============================================================
+   Phase 2 Workstream B: Crowd Reporting and Busy Levels
+   ============================================================ */
+
+.crowd-report-container {
+  margin-top: 1.5rem;
+}
+
+.crowd-report-panel {
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border: 1px solid #d8e6f5;
+  border-left: 4px solid #2196F3;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.crowd-report-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.crowd-report-header h3,
+.detail-section.crowd-report-summary h3 {
+  margin-top: 0;
+}
+
+.crowd-report-busy-summary,
+.crowd-report-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.crowd-report-meta {
+  margin: 0;
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.crowd-report-message {
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.crowd-report-error {
+  background-color: #ffebee;
+  color: #b71c1c;
+  border-left: 4px solid #c62828;
+}
+
+.crowd-report-success {
+  background-color: #e8f5e9;
+  color: #1b5e20;
+  border-left: 4px solid #2e7d32;
+}
+
+.crowd-report-form {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.crowd-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.busy-level-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.busy-level-score {
+  opacity: 0.8;
+}
+
+.busy-level-unknown {
+  background-color: #eceff1;
+  color: #37474f;
+  border-color: #cfd8dc;
+}
+
+.busy-level-low {
+  background-color: #e8f5e9;
+  color: #1b5e20;
+  border-color: #c8e6c9;
+}
+
+.busy-level-moderate {
+  background-color: #fff8e1;
+  color: #8d6e00;
+  border-color: #ffe082;
+}
+
+.busy-level-busy {
+  background-color: #fff3e0;
+  color: #e65100;
+  border-color: #ffcc80;
+}
+
+.busy-level-very-busy {
+  background-color: #ffebee;
+  color: #b71c1c;
+  border-color: #ef9a9a;
+}
+
+.park-busy-level {
+  margin: 0.75rem 0;
+}
+
+.park-card .busy-level-pill {
+  font-size: 0.8rem;
+}
+
+.crowd-report-summary-row p {
+  margin: 0;
+}
+
+/* ============================================================
    Phase 3: Search and Filter Styles
    ============================================================ */
 
