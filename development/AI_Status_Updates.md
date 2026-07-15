@@ -105,29 +105,21 @@ Known setup caution:
 - Park detail and result cards surface busy-level output and refreshed crowd-report state.
 - B-scoped dashboard styles are in place for report form, badge, and feedback states.
 
-### Sprint 2 Remaining Phase 2 Pickup Points
-Workstream A: Account Security and Identity
-- Start in `services/authService.js` with the new reset-password, reauthentication, and password-update APIs.
-- Wire login and profile UI flows in `views/login.html` and `views/profile.html`.
-- Finish controller handlers in `controllers/authController.js` for forgot-password and profile updates.
+### Sprint 2 Phase 2 Completion Confirmation
+- Workstream A is complete: account/password hardening, forgot-password flow, and secure profile updates are implemented.
+- Workstream B is complete: authenticated crowd reporting, duplicate suppression, and busy-level rendering are implemented.
+- Workstream C is complete: database-side text search, pagination/incremental loading behavior, and direct park-detail reads are implemented.
 
-Workstream C: Efficient Search Results
-- Start in `services/databaseService.js` with `queryParksPage()` and the search/pagination seams.
-- Wire incremental search rendering and state updates in `controllers/appController.js`.
-- Add loading, empty, retry, and pagination UI behavior in `views/dashboard.html` and `styles/main.css`.
+### Sprint 2 Phase 3 and Phase 4 Completion Summary
+Phase 3 complete:
+- Auth/profile/reporting/search integrations are unified through shared controller and service contracts.
+- Busy-level output is consistently rendered in discovery and detail workflows.
+- Cross-view feedback and gating behavior are aligned for protected actions.
 
-
-### Sprint 2 Phase 2-4 Snapshot (Planned)
-Phase 2:
-- Workstream A: account security, password recovery, profile management.
-- Workstream B: crowd-report submission, duplicate suppression, busy-level calculation.
-- Workstream C: efficient constrained search, incremental result loading, and related UI states.
-
-Phase 3:
-- Integrate auth, profile, reporting, busy-level, and search outputs into unified controller and UI flows.
-
-Phase 4:
-- Complete acceptance checks, regression checks, rules validation, and standardized user-facing error handling.
+Phase 4 complete:
+- Sprint 2 acceptance/setup notes are documented in `README.md`.
+- Sprint 2 validation checklist is captured in `development/Test Plans/Sprint2-Test-Plan.md`.
+- Stabilization updates include weighted 60-minute busy-level logic and standardized data-layer error messaging.
 
 ### Sprint 2 Documentation and Verification Notes
 Acceptance scope to validate:
@@ -142,14 +134,24 @@ Acceptance scope to validate:
 Verification tracking references:
 - `development/Sprint Implementation Plans/Sprint2-Implementation-Plan.md`
 
-Execution notes for this pass:
-- Completed in this pass:
-  - Implemented the Phase 1 shared constants and model contract extensions.
-  - Added service-level Sprint 2 seams for auth hardening and crowd-report/search foundations.
-  - Partitioned controller state to support parallel workstream ownership.
-- Intentionally not executed in this pass:
-  - Sprint 2 UI flows for password reset, profile edits, and crowd-report submission.
-  - Runtime validation against live Firebase rules or seeded report data.
+Execution notes for current state:
+- Sprint 2 implementation phases 1 through 4 are marked complete for project tracking.
+- Documentation, acceptance checklist, and setup directions are updated to reflect implemented behavior.
 
 ## Additional Debug/Fix Notes
-- No Sprint 2 stabilization fixes recorded yet beyond the initial Phase 1 scaffolding.
+- Sprint 2 stabilization fixes are now documented, including weighted busy-level logic, search/filter pagination hardening, and standardized data-layer error messaging.
+
+## Sprint 2 Current Implementation Status (2026-07-15)
+
+### Phase 1 and Phase 2 Summary
+- Phase 1 is complete and stable.
+- Phase 2 Workstream A is complete: forgot-password flow, password policy enforcement, reauthentication-sensitive password updates, and profile management wiring are implemented.
+- Phase 2 Workstream B is complete: crowd-report submission, duplicate suppression, and busy-level rendering in dashboard detail/results are implemented.
+- Phase 2 Workstream C is complete: search now uses database-side prefix querying for text search paths, pagination remains active, and park detail lookups no longer use full-collection reads.
+
+### Phase 3 and Phase 4 Finalization Notes
+- Busy-level calculation uses weighted 60-minute averaging in `services/databaseService.js` with shared policy constants in `constants/reportConstants.js`.
+- Combined search/filter integration supports paginated fetch-through behavior for consistent discovery results.
+- Database service error handling now standardizes user-facing failures for permission, network/unavailable, and missing-index scenarios.
+- `README.md` now includes Sprint 2 user guidance and acceptance/setup notes.
+- `development/Test Plans/Sprint2-Test-Plan.md` provides the Sprint 2 validation execution artifact.

@@ -3,3 +3,6 @@
 - Currently need to be logged in for search feature to work
     - Don't need an account to search or view park info. Need an account for anything else. 
 - AI: Duplicate auth toggle ID bug
+- Search results are currently case sensitive
+- Top buttons on Home page are not yet wired
+- Need to get button images so we can use them as buttons later

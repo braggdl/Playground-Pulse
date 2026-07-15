@@ -24,6 +24,11 @@ const BUSY_LEVEL_THRESHOLDS = {
   BUSY_MAX: 74
 };
 
+const BUSY_LEVEL_WEIGHTING_POLICY = {
+  // Most recent report has full weight; oldest report in the 60-minute window keeps a floor weight.
+  minRecencyWeight: 0.25
+};
+
 function normalizeCrowdLevel(level) {
   const parsedLevel = Number(level);
 
@@ -82,6 +87,7 @@ export {
   CROWD_REPORT_POLICY,
   BUSY_LEVEL_LABELS,
   BUSY_LEVEL_THRESHOLDS,
+  BUSY_LEVEL_WEIGHTING_POLICY,
   normalizeCrowdLevel,
   getReportWindowStart,
   getReportWindowKey,

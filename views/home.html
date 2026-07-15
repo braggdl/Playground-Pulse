@@ -6,22 +6,33 @@
   <title>Playground Pulse - Home</title>
   <link rel="stylesheet" href="../styles/main.css" />
 </head>
-<body>
-  <main class="dashboard-container">
-    <section class="dashboard-content">
-      <h1>Playground Pulse</h1>
-      <p>Search for a park by name or location.</p>
+<body class="home-page" data-colors-mode="light">
+  <main class="home-shell">
+    <section class="home-artboard" aria-label="Playground Pulse homepage illustration">
+      <img
+        class="home-artwork"
+        src="../development/Figma%20Files/PlaygroundPulseDesktop%20-%204.svg"
+        alt="Playground Pulse home design"
+      />
 
-      <form id="home-search-form" class="search-box">
+      <div class="home-ball-zone" aria-hidden="true">
+        <img
+          class="home-ball"
+          src="../development/Figma%20Files/Ball.svg"
+          alt=""
+        />
+      </div>
+
+      <form id="home-search-form" class="home-search-overlay" role="search">
+        <label class="home-search-label" for="home-search-input">Search parks by name or location</label>
         <input
           type="text"
           id="home-search-input"
-          class="search-input"
-          placeholder="Search parks by name or location..."
+          class="home-search-input"
+          placeholder="Search parks by name or location"
           autocomplete="off"
           required
         />
-        <button type="submit" class="btn btn-primary">Search</button>
       </form>
     </section>
   </main>
@@ -33,6 +44,26 @@
 
     const searchForm = document.getElementById("home-search-form");
     const searchInput = document.getElementById("home-search-input");
+    const ball = document.querySelector(".home-ball");
+    let isBallAnimating = false;
+    let ballAnimationTimer;
+
+    const getBallAnimationDurationMs = () => {
+      if (!ball) {
+        return 0;
+      }
+
+      const duration = window.getComputedStyle(ball).animationDuration.split(",")[0].trim();
+      if (duration.endsWith("ms")) {
+        return Number.parseFloat(duration);
+      }
+
+      if (duration.endsWith("s")) {
+        return Number.parseFloat(duration) * 1000;
+      }
+
+      return 0;
+    };
 
     if (searchForm && searchInput) {
       searchForm.addEventListener("submit", (event) => {
@@ -44,6 +75,35 @@
         }
 
         window.location.href = `./dashboard.html?q=${encodeURIComponent(searchTerm)}`;
+      });
+    }
+
+    if (ball) {
+      const startBallAnimation = () => {
+        if (isBallAnimating) {
+          return;
+        }
+
+        isBallAnimating = true;
+        ball.classList.remove("home-ball-animate");
+        // Force reflow so the one-shot class always restarts from frame 0.
+        void ball.offsetWidth;
+        ball.classList.add("home-ball-animate");
+
+        const ballAnimationMs = getBallAnimationDurationMs();
+        clearTimeout(ballAnimationTimer);
+        ballAnimationTimer = setTimeout(() => {
+          isBallAnimating = false;
+          ball.classList.remove("home-ball-animate");
+        }, ballAnimationMs + 80);
+      };
+
+      ball.addEventListener("pointerenter", startBallAnimation);
+
+      ball.addEventListener("animationend", () => {
+        clearTimeout(ballAnimationTimer);
+        isBallAnimating = false;
+        ball.classList.remove("home-ball-animate");
       });
     }
   </script>

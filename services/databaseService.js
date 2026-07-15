@@ -25,6 +25,7 @@ import {
 } from "./firebase-config.js";
 import { createParkModel } from "../models/parkModel.js";
 import {
+  BUSY_LEVEL_WEIGHTING_POLICY,
   CROWD_REPORT_POLICY,
   getBusyLevelLabel,
   getBusyLevelScoreFromCrowdLevel,
@@ -49,6 +50,21 @@ function getDatabaseService() {
 }
 
 function createServiceError(error, fallbackMessage) {
+  const errorCode = String(error?.code || "").toLowerCase();
+  const errorMessage = String(error?.message || "").toLowerCase();
+
+  if (errorCode.includes("permission-denied")) {
+    return new Error("You do not have permission to complete this request.");
+  }
+
+  if (errorCode.includes("unavailable") || errorCode.includes("deadline-exceeded") || errorCode.includes("network") || errorMessage.includes("network")) {
+    return new Error("Unable to reach the database right now. Please check your connection and try again.");
+  }
+
+  if (errorCode.includes("failed-precondition") || errorMessage.includes("requires an index")) {
+    return new Error("This query requires additional database indexes. Please contact an administrator to complete index setup.");
+  }
+
   return new Error(error?.message || fallbackMessage);
 }
 
@@ -359,13 +375,35 @@ async function searchAndFilterParks(searchTerm, filterCriteria, options = {}) {
     const hasSearchTerm = Boolean(normalizeSearchPrefix(searchTerm));
 
     if (hasSearchTerm) {
-      const searchResponse = await queryParksBySearchTerm(searchTerm, options);
       const predicate = buildParkSearchFilterPredicate(undefined, filterCriteria || {});
-      const filteredResults = searchResponse.results.filter(predicate);
+      const pageSize = normalizeParkSearchPageSize(options.pageSize);
+      let cursor = options.startAfter || null;
+      let filteredResults = [];
+      let hasMore = false;
+      let safetyCounter = 0;
+
+      while (filteredResults.length < pageSize && safetyCounter < 10) {
+        safetyCounter += 1;
+        const searchResponse = await queryParksBySearchTerm(searchTerm, {
+          ...options,
+          startAfter: cursor,
+          pageSize
+        });
+
+        filteredResults = filteredResults.concat(searchResponse.results.filter(predicate));
+        cursor = searchResponse.lastDocument;
+        hasMore = searchResponse.hasMore;
+
+        if (!searchResponse.hasMore) {
+          break;
+        }
+      }
 
       return {
-        ...searchResponse,
-        results: filteredResults
+        results: applyParkSearchPageLimit(filteredResults, options),
+        lastDocument: cursor,
+        pageSize,
+        hasMore
       };
     }
 
@@ -439,6 +477,27 @@ async function getRecentCrowdReportsForPark(parkId, minutes = CROWD_REPORT_POLIC
   }
 }
 
+function getMinutesSinceReport(reportedAt, nowMs = Date.now()) {
+  const reportedMs = Date.parse(reportedAt || "");
+
+  if (!Number.isFinite(reportedMs)) {
+    return 0;
+  }
+
+  const diffMinutes = (nowMs - reportedMs) / (60 * 1000);
+  if (!Number.isFinite(diffMinutes)) {
+    return 0;
+  }
+
+  return Math.max(0, diffMinutes);
+}
+
+function getRecencyWeight(minutesSinceReport) {
+  const clampedMinutes = Math.min(minutesSinceReport, CROWD_REPORT_POLICY.windowMinutes);
+  const recencyRatio = 1 - (clampedMinutes / CROWD_REPORT_POLICY.windowMinutes);
+  return Math.max(BUSY_LEVEL_WEIGHTING_POLICY.minRecencyWeight, recencyRatio);
+}
+
 function calculateBusyLevelFromReports(reports = []) {
   if (!reports.length) {
     return {
@@ -448,11 +507,21 @@ function calculateBusyLevelFromReports(reports = []) {
     };
   }
 
-  const scores = reports
-    .map((report) => getBusyLevelScoreFromCrowdLevel(report.crowdLevel))
-    .filter((score) => Number.isFinite(score));
+  const nowMs = Date.now();
+  const weightedScores = reports
+    .map((report) => {
+      const score = getBusyLevelScoreFromCrowdLevel(report.crowdLevel);
+      if (!Number.isFinite(score)) {
+        return null;
+      }
 
-  if (!scores.length) {
+      const minutesSinceReport = getMinutesSinceReport(report.reportedAt, nowMs);
+      const weight = getRecencyWeight(minutesSinceReport);
+      return { score, weight };
+    })
+    .filter((entry) => entry !== null);
+
+  if (!weightedScores.length) {
     return {
       score: null,
       label: getBusyLevelLabel(null),
@@ -460,12 +529,16 @@ function calculateBusyLevelFromReports(reports = []) {
     };
   }
 
-  const averageScore = Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+  const weightedScoreTotal = weightedScores.reduce((sum, entry) => sum + (entry.score * entry.weight), 0);
+  const totalWeight = weightedScores.reduce((sum, entry) => sum + entry.weight, 0);
+  const weightedAverageScore = totalWeight > 0
+    ? Math.round(weightedScoreTotal / totalWeight)
+    : null;
 
   return {
-    score: averageScore,
-    label: getBusyLevelLabel(averageScore),
-    reportCount: scores.length
+    score: weightedAverageScore,
+    label: getBusyLevelLabel(weightedAverageScore),
+    reportCount: weightedScores.length
   };
 }
 
