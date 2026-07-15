@@ -26,8 +26,23 @@
       <h2>User Profile</h2>
 
       <div class="profile-field">
-        <label>Display Name:</label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <label>Display Name:</label>
+          <button type="button" id="edit-display-name-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Edit</button>
+        </div>
         <p id="profile-display-name">Loading...</p>
+        
+        <!-- Edit Display Name Form -->
+        <div id="edit-display-name-form" class="profile-edit-inline" style="display: none; margin-top: 1rem;">
+          <div class="form-group">
+            <input type="text" id="new-display-name" placeholder="Enter new display name" />
+          </div>
+          <div id="profile-display-name-message" class="profile-message" style="display: none; margin-bottom: 1rem;"></div>
+          <div class="profile-button-group">
+            <button type="button" id="save-display-name-btn" class="btn btn-primary">Save</button>
+            <button type="button" id="cancel-display-name-btn" class="btn btn-secondary">Cancel</button>
+          </div>
+        </div>
       </div>
 
       <div class="profile-field">
@@ -45,10 +60,49 @@
         <p id="profile-created-at">Loading...</p>
       </div>
     </section>
+
+    <!-- Security Section -->
+    <section class="profile-card profile-section">
+      <h3>Security</h3>
+      <button type="button" id="change-password-btn" class="btn btn-primary">Change Password</button>
+
+      <!-- Change Password Form -->
+      <div id="change-password-form" class="profile-form" style="display: none; margin-top: 1.5rem;">
+        <div class="form-group">
+          <label for="current-password">Current Password:</label>
+          <input type="password" id="current-password" placeholder="Enter your current password" required />
+        </div>
+
+        <div class="form-group">
+          <label for="new-password">New Password:</label>
+          <input type="password" id="new-password" placeholder="Enter new password" required />
+          <div id="password-policy-feedback" class="password-policy-feedback" style="margin-top: 0.75rem;"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-new-password">Confirm New Password:</label>
+          <input type="password" id="confirm-new-password" placeholder="Confirm new password" required />
+        </div>
+
+        <div id="profile-password-change-message" class="profile-message" style="display: none; margin-bottom: 1rem;"></div>
+
+        <div class="profile-button-group">
+          <button type="button" id="update-password-btn" class="btn btn-primary">Update Password</button>
+          <button type="button" id="cancel-password-btn" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script type="module">
-    import { initializeApp, appState } from "../controllers/appController.js";
+    import { 
+      initializeApp, 
+      appState 
+    } from "../controllers/appController.js";
+    import { 
+      handleUpdateDisplayName, 
+      handleChangePassword 
+    } from "../controllers/authController.js";
     
     // Initialize app
     initializeApp();
@@ -67,11 +121,16 @@
         document.getElementById("profile-role").textContent = 
           appState.userRole || "Parent";
         
-        // Note: Member since would come from Firestore user record in Phase 3+
         document.getElementById("profile-created-at").textContent = 
           appState.currentUser.metadata?.creationTime || "Account created";
       }
     }, 100);
+
+    // Export functions for use in onclick handlers
+    window.profileExports = {
+      handleUpdateDisplayName,
+      handleChangePassword
+    };
   </script>
 </body>
 </html>
