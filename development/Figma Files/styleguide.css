@@ -1,0 +1,36 @@
+:root {
+  --colors-labels-vibrant-secondary: rgba(114, 114, 114, 1);
+  --colors-fills-secondary: rgba(120, 120, 128, 0.16);
+}
+
+/*
+
+To enable a theme in your HTML, simply add one of the following data attributes to an HTML element, like so:
+
+<body data-colors-mode="light">
+    <!-- the rest of your content -->
+</body>
+
+You can apply the theme on any DOM node, not just the `body`
+
+*/
+
+[data-colors-mode="light"] {
+  --colors-labels-vibrant-secondary: rgba(114, 114, 114, 1);
+  --colors-fills-secondary: rgba(120, 120, 128, 0.16);
+}
+
+[data-colors-mode="dark"] {
+  --colors-labels-vibrant-secondary: rgba(138, 138, 138, 1);
+  --colors-fills-secondary: rgba(120, 120, 128, 0.32);
+}
+
+[data-colors-mode="IC-light"] {
+  --colors-labels-vibrant-secondary: rgba(153, 153, 153, 1);
+  --colors-fills-secondary: rgba(120, 120, 128, 0.24);
+}
+
+[data-colors-mode="IC-dark"] {
+  --colors-labels-vibrant-secondary: rgba(138, 138, 138, 1);
+  --colors-fills-secondary: rgba(120, 120, 128, 0.4);
+}
