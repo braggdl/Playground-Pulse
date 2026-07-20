@@ -60,7 +60,7 @@ body {
 .home-ball {
   position: absolute;
   left: 46.3%;
-  top: calc(34.8% + 14px);
+  top: calc(34.8% + 20px);
   width: clamp(2.15rem, 4.7vw, 5.1rem);
   height: auto;
   transform: translate(-50%, -50%);
@@ -83,8 +83,8 @@ body {
   }
 
   16% {
-    left: calc(35.8% + 40px);
-    top: calc(62.6% - 6px);
+    left: calc(35.8% + 50px);
+    top: calc(62.6% - 20px);
     transform: translate(-50%, -50%) scale(1);
   }
 
