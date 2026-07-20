@@ -24,6 +24,7 @@ import {
   initializeFirebaseServices
 } from "./firebase-config.js";
 import { createParkModel } from "../models/parkModel.js";
+import { createAuditLogModel, isValidAuditEventType } from "../models/auditLogModel.js";
 import {
   BUSY_LEVEL_WEIGHTING_POLICY,
   CROWD_REPORT_POLICY,
@@ -659,6 +660,52 @@ async function editParkRecord(parkId, updatedData) {
   return getParkById(parkId);
 }
 
+/**
+ * Sprint 3 Phase 1: Write an audit log entry to the auditLog collection.
+ * All administrative actions (safety report transitions, equipment status changes,
+ * admin assignments, moderation actions) must call this method.
+ *
+ * logAuditEvent(event) → Promise<{ id: string }>
+ *   Input:  event object with { eventType, actorId, targetId, parkId?, metadata?, timestamp? }
+ *   Output: object with the Firestore document ID of the created audit log entry
+ *   Errors:
+ *     Throws Error("eventType is required.")  if eventType is falsy
+ *     Throws Error("actorId is required.")    if actorId is falsy
+ *     Throws Error("targetId is required.")   if targetId is falsy
+ *     Throws Error with Firestore error message on write failure
+ *
+ * NOTE: Reads of the auditLog collection must always use filtered queries
+ * (by park, actor, or eventType). Full-collection reads are not supported.
+ */
+async function logAuditEvent(event = {}) {
+  if (!event.eventType) {
+    throw new Error("eventType is required.");
+  }
+
+  if (!event.actorId) {
+    throw new Error("actorId is required.");
+  }
+
+  if (!event.targetId) {
+    throw new Error("targetId is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const auditLogRef = collection(db, "auditLog");
+    const auditEntry = createAuditLogModel({
+      ...event,
+      timestamp: event.timestamp || new Date().toISOString()
+    });
+
+    const { id, ...entryData } = auditEntry;
+    const docRef = await addDoc(auditLogRef, entryData);
+    return { id: docRef.id };
+  } catch (error) {
+    throw createServiceError(error, "Log audit event failed.");
+  }
+}
+
 export {
   createRecord,
   createUserRecord,
@@ -674,5 +721,6 @@ export {
   queryParksPage,
   getRecentCrowdReportsForPark,
   calculateBusyLevelFromReports,
-  submitCrowdReport
+  submitCrowdReport,
+  logAuditEvent
 };

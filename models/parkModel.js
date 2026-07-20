@@ -58,6 +58,19 @@ function createParkModel(partialPark = {}) {
     },
     safetyNotes: partialPark.safetyNotes || "",
     amenitiesNotes: partialPark.amenitiesNotes || "",
+    // Sprint 3 fields
+    // equipment: array of equipment document IDs belonging to this park
+    equipment: Array.isArray(partialPark.equipment) ? partialPark.equipment : [],
+    // reviewAggregate: maintained by updateReviewAggregate() after each new review submission
+    reviewAggregate: {
+      averageRating: partialPark.reviewAggregate?.averageRating ?? null,
+      reviewCount: Number(partialPark.reviewAggregate?.reviewCount || 0)
+    },
+    // crowdHistory: array of crowd-level report summaries for the last 7 days (populated by getCrowdHistory)
+    crowdHistory: Array.isArray(partialPark.crowdHistory) ? partialPark.crowdHistory : [],
+    // photos: array of Firebase Storage download URLs uploaded by authenticated users
+    photos: Array.isArray(partialPark.photos) ? partialPark.photos : [],
+    // location should include { address, lat, lng } for map view marker rendering
     createdAt: partialPark.createdAt || now,
     updatedAt: partialPark.updatedAt || now
   };

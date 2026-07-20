@@ -31,6 +31,9 @@ function createUserModel(partialUser = {}) {
     lastReauthenticatedAt: partialUser.lastReauthenticatedAt || null,
     reauthRequired: Boolean(partialUser.reauthRequired),
     passwordPolicyVersion: partialUser.passwordPolicyVersion || PASSWORD_POLICY.version,
+    // Sprint 3: park IDs this user is assigned as Park Admin for (Site Admin assignment only)
+    // favorites are stored as a Firestore subcollection at users/{userId}/favorites — not a model field
+    assignedParks: Array.isArray(partialUser.assignedParks) ? partialUser.assignedParks : [],
     createdAt: partialUser.createdAt || now,
     updatedAt: partialUser.updatedAt || now
   };

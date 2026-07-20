@@ -155,3 +155,77 @@ Execution notes for current state:
 - Database service error handling now standardizes user-facing failures for permission, network/unavailable, and missing-index scenarios.
 - `README.md` now includes Sprint 2 user guidance and acceptance/setup notes.
 - `development/Test Plans/Sprint2-Test-Plan.md` provides the Sprint 2 validation execution artifact.
+
+# Sprint 3 Implementation Status
+
+## Sprint 3 Backlog Scope
+Sprint 3 introduces safety and maintenance reporting, equipment management, park administration, community features (reviews, photos, favorites), crowd history with map view, and mobile-responsive layout.
+
+Full scope:
+1. Submit Safety or Maintenance Report
+2. Manage Safety Reports
+3. Manage Equipment Status
+4. Track Safety Report Status and Notifications
+5. Assign Park Admins to Parks
+6. Record Administrative Actions
+7. Moderate Content and Users
+8. Submit Park Reviews and Ratings
+9. Upload Park Photos
+10. Save Favorite Parks
+11. Show Crowd History and Map View
+12. Support Mobile-Friendly Use
+
+## Sprint 3 Planning and Handoff Notes (2026-07-20)
+
+### Planning Status
+- Sprint 3 implementation plan is documented in `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`.
+- No implementation has begun. Phase 1 (Foundational Work) is the hard gate before any parallel workstream work starts.
+
+### Phase 1 — Foundational Work (Pending)
+Phase 1 must be completed and accepted by the team before any workstream branches. Key deliverables for the Phase 1 gate:
+1. New model files created: `models/safetyReportModel.js`, `models/equipmentModel.js`, `models/reviewModel.js`, `models/auditLogModel.js`
+2. `models/userModel.js` extended with favorites subcollection references and admin assignment metadata
+3. `models/parkModel.js` extended with equipment list, review aggregates, and crowd history references
+4. `constants/reportConstants.js` extended with safety report status enum, equipment status enum, valid transition map, and `canTransition()` helper
+5. `constants/authConstants.js` extended with park-level authorization rules for all Sprint 3 role-gated operations
+6. `services/storageService.js` scaffolded with `validatePhoto()` and `uploadParkPhoto()` method signatures and defined error types
+7. `services/notificationService.js` scaffolded with `notifyUser()` and in-app Firestore writer
+8. `services/databaseService.js` extended with `logAuditEvent()` method
+9. Responsive CSS baseline and shared component styles added to `styles/main.css`
+10. Sprint 3 seed data steps documented and a stable baseline branch established
+
+### Phase 2 — Parallel Workstreams (Not Started)
+Five workstreams can run in parallel after Phase 1 is accepted. Suggested assignments:
+- **Engineer A** — Workstream 1: Safety and Maintenance (safety report submission, management, equipment status, notifications); Workstream 4: Crowd Information (crowd history, map view) if capacity allows
+- **Engineer B** — Workstream 2: Administration (park admin assignment, audit log, moderation panel)
+- **Engineer C** — Workstream 3: Community Features (reviews, photos, favorites); Workstream 5: Responsive Experience (mobile layout passes after workstream views stabilize)
+
+### Workstream Dependency Summary for Parallel Agents
+- Workstream 1 tasks are internally sequential: submit → manage → equipment → notifications
+- Workstream 2 tasks: 2.5 (assign admins) and 2.7 (moderate) are independent; 2.6 (audit log viewer) requires 2.5 events to be wired first
+- Workstream 3 tasks: 2.8 (reviews), 2.9 (photos), and 2.10 (favorites) are independent within the workstream
+- Workstream 4 is fully independent of Workstreams 1–3
+- Workstream 5 (responsive CSS) can begin during Phase 1 on the shared baseline and integrate per-view passes as workstream UIs stabilize
+
+### Shared Contracts Agents Must Respect
+- All workstream code must call `canTransition(currentStatus, targetStatus, role)` for safety report and equipment status changes — do not implement transition logic inline
+- All workstream code must call `logAuditEvent(event)` for every audit-relevant action — do not write directly to the `auditLog` collection outside this method
+- All workstream code must call `notificationService.notifyUser()` for notification events — do not write directly to the `notifications` collection outside this method
+- Photo uploads must pass through `storageService.validatePhoto()` before `uploadParkPhoto()` — do not skip validation
+- Authorization constants in `constants/authConstants.js` are the source of truth for role rules — do not hardcode role checks in feature code
+
+### Phase 3 and Phase 4 (Not Started)
+- Phase 3 (Integration) begins after all workstreams are code-complete
+- Phase 4 (Stabilization and Acceptance) begins after Phase 3 integration is validated
+- Full checklists are in `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`
+
+### New Files to Create in Sprint 3
+| File | Owner Phase | Purpose |
+|---|---|---|
+| `models/safetyReportModel.js` | Phase 1 — Engineer A | Safety/maintenance report shape |
+| `models/equipmentModel.js` | Phase 1 — Engineer A | Equipment record and status shape |
+| `models/reviewModel.js` | Phase 1 — Engineer A | Park review and rating shape |
+| `models/auditLogModel.js` | Phase 1 — Engineer A | Audit log event shape |
+| `services/notificationService.js` | Phase 1 — Engineer C | Notification interface and in-app delivery |
+| `services/storageService.js` | Phase 1 — Engineer B | Photo upload and validation |
+| `views/admin.html` | Phase 2 — Engineer B | Park Admin and Site Admin administration view |

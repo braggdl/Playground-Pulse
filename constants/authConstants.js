@@ -77,11 +77,40 @@ function getFriendlyAuthMessage(error, fallbackMessage = "Authentication request
   return fallbackMessage;
 }
 
+// Sprint 3: Park-level role authorization rules.
+// Keys map to action names used by canPerformAction().
+// Values are arrays of USER_ROLES values that are authorized for each action.
+const PARK_ROLE_RULES = {
+  safetyReportTransition: ["Park Admin", "Site Admin"],
+  equipmentStatusChange: ["Park Admin", "Site Admin"],
+  assignParkAdmin: ["Site Admin"],
+  removeParkAdmin: ["Site Admin"],
+  moderateContent: ["Park Admin", "Site Admin"],
+  moderateUser: ["Site Admin"],
+  viewAuditLog: ["Site Admin"],
+  logAuditEvent: ["Park Admin", "Site Admin"]
+};
+
+// Sprint 3: Check whether a given role is authorized for an action.
+// Returns true if the role is in the allowed list for the action; false otherwise.
+// Unknown action names return false (fail-safe default).
+function canPerformAction(role, action) {
+  const allowedRoles = PARK_ROLE_RULES[action];
+
+  if (!Array.isArray(allowedRoles)) {
+    return false;
+  }
+
+  return allowedRoles.includes(role);
+}
+
 export {
   PASSWORD_POLICY,
   AUTH_ERROR_MESSAGES,
   getPasswordValidationErrors,
   validatePasswordStrength,
   extractAuthErrorCode,
-  getFriendlyAuthMessage
+  getFriendlyAuthMessage,
+  PARK_ROLE_RULES,
+  canPerformAction
 };

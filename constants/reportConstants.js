@@ -83,6 +83,52 @@ function getBusyLevelLabel(score) {
   return BUSY_LEVEL_LABELS.VERY_BUSY;
 }
 
+// Sprint 3: Safety report status values and valid workflow transition map.
+// Transitions: open → in_review → resolved → closed
+// Only Park Admin and Site Admin roles may perform transitions (enforced via canTransition).
+const SAFETY_REPORT_STATUSES = {
+  OPEN: "open",
+  IN_REVIEW: "in_review",
+  RESOLVED: "resolved",
+  CLOSED: "closed"
+};
+
+const SAFETY_REPORT_TRANSITIONS = {
+  [SAFETY_REPORT_STATUSES.OPEN]: [SAFETY_REPORT_STATUSES.IN_REVIEW],
+  [SAFETY_REPORT_STATUSES.IN_REVIEW]: [SAFETY_REPORT_STATUSES.RESOLVED],
+  [SAFETY_REPORT_STATUSES.RESOLVED]: [SAFETY_REPORT_STATUSES.CLOSED],
+  [SAFETY_REPORT_STATUSES.CLOSED]: []
+};
+
+// Sprint 3: Validate a safety report status transition and role authorization.
+// Returns true only when both the transition is in the allowed map AND the role is authorized.
+// Workstream feature code must call this before any status update.
+function canTransition(currentStatus, targetStatus, role) {
+  const allowedNextStatuses = SAFETY_REPORT_TRANSITIONS[currentStatus];
+
+  if (!Array.isArray(allowedNextStatuses) || !allowedNextStatuses.includes(targetStatus)) {
+    return false;
+  }
+
+  // Import kept inline via dynamic check to avoid circular dependency with authConstants.
+  // Authorized roles for safetyReportTransition: Park Admin, Site Admin.
+  const authorizedRoles = ["Park Admin", "Site Admin"];
+  return authorizedRoles.includes(role);
+}
+
+// Sprint 3: Equipment status values and display labels.
+const EQUIPMENT_STATUSES = {
+  OPERATIONAL: "operational",
+  NEEDS_REPAIR: "needs_repair",
+  OUT_OF_SERVICE: "out_of_service"
+};
+
+const EQUIPMENT_STATUS_LABELS = {
+  [EQUIPMENT_STATUSES.OPERATIONAL]: "Operational",
+  [EQUIPMENT_STATUSES.NEEDS_REPAIR]: "Needs Repair",
+  [EQUIPMENT_STATUSES.OUT_OF_SERVICE]: "Out of Service"
+};
+
 export {
   CROWD_REPORT_POLICY,
   BUSY_LEVEL_LABELS,
@@ -92,5 +138,10 @@ export {
   getReportWindowStart,
   getReportWindowKey,
   getBusyLevelScoreFromCrowdLevel,
-  getBusyLevelLabel
+  getBusyLevelLabel,
+  SAFETY_REPORT_STATUSES,
+  SAFETY_REPORT_TRANSITIONS,
+  canTransition,
+  EQUIPMENT_STATUSES,
+  EQUIPMENT_STATUS_LABELS
 };
