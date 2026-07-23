@@ -28,6 +28,7 @@ Playground Pulse: A Kid-Friendly Park Finder is a web-based, community-driven pa
 8. Crowd-level reporting with duplicate-window protection (one report per user per park per hour).
 9. Busy-level display in search cards and park detail based on reports in the latest 60 minutes.
 10. Profile management for display-name updates and password change with reauthentication.
+11. Administration view for Site Admin and Park Admin moderation workflows.
 
 ## User Roles
 1. Parent: browse, search, filter, and view park details.
@@ -47,6 +48,9 @@ Playground Pulse: A Kid-Friendly Park Finder is a web-based, community-driven pa
 3. Select a park to open its detail section and submit crowd level if signed in.
 4. If your role is Park Admin or Site Admin, create or edit park records from the dashboard controls.
 5. Open Profile to review account details, edit display name, or change password.
+6. Open `views/admin.html` for administration tools (role-gated):
+   - Site Admin: assign/remove Park Admins, moderate reviews/users, view audit log
+   - Park Admin: moderate reviews for assigned parks
 
 ### Account Recovery And Profile Security
 1. Use the `Forgot password?` action on `views/login.html` to request a reset email.
