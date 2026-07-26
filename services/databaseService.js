@@ -25,6 +25,8 @@ import {
 } from "./firebase-config.js";
 import { createParkModel } from "../models/parkModel.js";
 import { createAuditLogModel, isValidAuditEventType } from "../models/auditLogModel.js";
+import { createReviewModel } from "../models/reviewModel.js";
+import { uploadParkPhoto, validatePhoto } from "./storageService.js";
 import {
   BUSY_LEVEL_WEIGHTING_POLICY,
   CROWD_REPORT_POLICY,
@@ -677,6 +679,208 @@ async function editParkRecord(parkId, updatedData) {
  * NOTE: Reads of the auditLog collection must always use filtered queries
  * (by park, actor, or eventType). Full-collection reads are not supported.
  */
+async function createReview(parkId, userId, reviewData = {}) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const reviewsRef = collection(db, "reviews");
+    const existingReviewQuery = query(reviewsRef, where("parkId", "==", parkId), where("userId", "==", userId));
+    const existingReviewSnapshot = await getDocs(existingReviewQuery);
+
+    if (!existingReviewSnapshot.empty) {
+      throw new Error("You have already reviewed this park.");
+    }
+
+    const reviewEntry = createReviewModel({
+      ...reviewData,
+      parkId,
+      userId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    const recordRef = await addDoc(reviewsRef, reviewEntry);
+    await updateReviewAggregate(parkId);
+
+    return { id: recordRef.id, ...reviewEntry };
+  } catch (error) {
+    throw createServiceError(error, "Create review failed.");
+  }
+}
+
+async function getReviews(parkId, options = {}) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const reviewsRef = collection(db, "reviews");
+    const reviewsQuery = query(reviewsRef, where("parkId", "==", parkId));
+    const snapshot = await getDocs(reviewsQuery);
+    const reviews = snapshot.docs.map((reviewDocument) => ({ id: reviewDocument.id, ...reviewDocument.data() }));
+
+    if (options.includeHidden) {
+      return reviews.sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""));
+    }
+
+    return reviews
+      .filter((review) => !review.hidden)
+      .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""));
+  } catch (error) {
+    throw createServiceError(error, "Get reviews failed.");
+  }
+}
+
+async function updateReviewAggregate(parkId) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  try {
+    const reviews = await getReviews(parkId, { includeHidden: true });
+    const ratings = reviews
+      .map((review) => Number(review.rating))
+      .filter((rating) => Number.isFinite(rating));
+
+    const averageRating = ratings.length > 0
+      ? Number((ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1))
+      : null;
+
+    const payload = {
+      reviewAggregate: {
+        averageRating,
+        reviewCount: ratings.length
+      },
+      updatedAt: new Date().toISOString()
+    };
+
+    await updateRecord("parks", parkId, payload);
+    return payload.reviewAggregate;
+  } catch (error) {
+    throw createServiceError(error, "Update review aggregate failed.");
+  }
+}
+
+async function addFavorite(userId, parkId) {
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const favoritesRef = collection(db, "users", userId, "favorites");
+    const existingFavoritesQuery = query(favoritesRef, where("parkId", "==", parkId));
+    const snapshot = await getDocs(existingFavoritesQuery);
+
+    if (!snapshot.empty) {
+      return { success: true, added: false, favorite: { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } };
+    }
+
+    const favoriteEntry = {
+      parkId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const recordRef = await addDoc(favoritesRef, favoriteEntry);
+    return { success: true, added: true, favorite: { id: recordRef.id, ...favoriteEntry } };
+  } catch (error) {
+    throw createServiceError(error, "Add favorite failed.");
+  }
+}
+
+async function removeFavorite(userId, parkId) {
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const favoritesRef = collection(db, "users", userId, "favorites");
+    const existingFavoritesQuery = query(favoritesRef, where("parkId", "==", parkId));
+    const snapshot = await getDocs(existingFavoritesQuery);
+
+    if (snapshot.empty) {
+      return { success: true, removed: false };
+    }
+
+    await deleteDoc(doc(favoritesRef, snapshot.docs[0].id));
+    return { success: true, removed: true };
+  } catch (error) {
+    throw createServiceError(error, "Remove favorite failed.");
+  }
+}
+
+async function getFavorites(userId) {
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const favoritesRef = collection(db, "users", userId, "favorites");
+    const snapshot = await getDocs(favoritesRef);
+    return snapshot.docs.map((favoriteDocument) => ({ id: favoriteDocument.id, ...favoriteDocument.data() }));
+  } catch (error) {
+    throw createServiceError(error, "Get favorites failed.");
+  }
+}
+
+async function submitParkPhoto(parkId, userId, file) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  validatePhoto(file);
+
+  try {
+    const photoUrl = await uploadParkPhoto(parkId, file);
+    const db = getDatabaseService();
+    const parkRef = doc(db, "parks", parkId);
+    const parkSnapshot = await getDoc(parkRef);
+
+    if (!parkSnapshot.exists()) {
+      throw new Error("Park not found.");
+    }
+
+    const currentPark = parkSnapshot.data() || {};
+    const photos = Array.isArray(currentPark.photos) ? currentPark.photos : [];
+
+    if (!photos.includes(photoUrl)) {
+      photos.push(photoUrl);
+    }
+
+    await updateDoc(parkRef, {
+      photos,
+      updatedAt: new Date().toISOString()
+    });
+
+    return { success: true, photoUrl, photos };
+  } catch (error) {
+    throw createServiceError(error, "Submit park photo failed.");
+  }
+}
+
 async function logAuditEvent(event = {}) {
   if (!event.eventType) {
     throw new Error("eventType is required.");
@@ -722,5 +926,12 @@ export {
   getRecentCrowdReportsForPark,
   calculateBusyLevelFromReports,
   submitCrowdReport,
-  logAuditEvent
+  logAuditEvent,
+  createReview,
+  getReviews,
+  updateReviewAggregate,
+  addFavorite,
+  removeFavorite,
+  getFavorites,
+  submitParkPhoto
 };
