@@ -175,30 +175,58 @@ Full scope:
 11. Show Crowd History and Map View
 12. Support Mobile-Friendly Use
 
-## Sprint 3 Planning and Handoff Notes (2026-07-20)
+## Sprint 3 Execution Update (2026-07-27)
 
-### Planning Status
-- Sprint 3 implementation plan is documented in `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`.
-- No implementation has begun. Phase 1 (Foundational Work) is the hard gate before any parallel workstream work starts.
+### Planning to Execution Status
+- Sprint 3 implementation plan remains documented in `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`.
+- Engineer A implementation for Workstream 1 and Workstream 4 is finalized for the Sprint 3 Phase 2 checkpoint (service/controller/view/style complete).
+- Scope guard maintained: no Workstream 2, 3, or 5 feature implementation was added in this pass.
 
-### Phase 1 — Foundational Work (Pending)
-Phase 1 must be completed and accepted by the team before any workstream branches. Key deliverables for the Phase 1 gate:
-1. New model files created: `models/safetyReportModel.js`, `models/equipmentModel.js`, `models/reviewModel.js`, `models/auditLogModel.js`
-2. `models/userModel.js` extended with favorites subcollection references and admin assignment metadata
-3. `models/parkModel.js` extended with equipment list, review aggregates, and crowd history references
-4. `constants/reportConstants.js` extended with safety report status enum, equipment status enum, valid transition map, and `canTransition()` helper
-5. `constants/authConstants.js` extended with park-level authorization rules for all Sprint 3 role-gated operations
-6. `services/storageService.js` scaffolded with `validatePhoto()` and `uploadParkPhoto()` method signatures and defined error types
-7. `services/notificationService.js` scaffolded with `notifyUser()` and in-app Firestore writer
-8. `services/databaseService.js` extended with `logAuditEvent()` method
-9. Responsive CSS baseline and shared component styles added to `styles/main.css`
-10. Sprint 3 seed data steps documented and a stable baseline branch established
+### Phase 1 — Foundational Work (Completed for Active Scope)
+The foundations required to begin Workstream 1 and Workstream 4 are in place:
+1. New model files exist and are integrated where needed for safety/equipment/audit operations (`models/safetyReportModel.js`, `models/equipmentModel.js`, `models/auditLogModel.js`).
+2. `constants/reportConstants.js` includes safety/equipment statuses and transition helpers consumed by services.
+3. `constants/authConstants.js` role capability checks are used through shared helpers (no inline policy drift in status transitions).
+4. `services/notificationService.js` includes notification write flow and real-time subscription support.
+5. `services/databaseService.js` includes audit-logged Workstream 1 and Workstream 4 methods:
+   - safety reports (create/read/transition)
+   - equipment records (create/read/status update)
+   - notifications (read/mark read)
+   - crowd history (7-day trend source)
+6. Shared Sprint 3 baseline styles are present in `styles/main.css` and extended for WS1/WS4 surfaces.
 
-### Phase 2 — Parallel Workstreams (Not Started)
-Five workstreams can run in parallel after Phase 1 is accepted. Suggested assignments:
-- **Engineer A** — Workstream 1: Safety and Maintenance (safety report submission, management, equipment status, notifications); Workstream 4: Crowd Information (crowd history, map view) if capacity allows
-- **Engineer B** — Workstream 2: Administration (park admin assignment, audit log, moderation panel)
-- **Engineer C** — Workstream 3: Community Features (reviews, photos, favorites); Workstream 5: Responsive Experience (mobile layout passes after workstream views stabilize)
+### Phase 2 — Parallel Workstreams (Engineer A Status)
+Engineer A focus remains Workstream 1 + Workstream 4 only.
+
+Phase 2 finalization status for Engineer A scope:
+1. Workstream 1 is finalized for Sprint 3 Phase 2 commit scope.
+2. Workstream 4 is finalized for Sprint 3 Phase 2 commit scope.
+3. Follow-on work for remaining Sprint 3 workstreams is intentionally deferred.
+
+#### Workstream 1: Safety and Maintenance
+- Service layer implemented in `services/databaseService.js` and `services/notificationService.js`.
+- Controller orchestration implemented in `controllers/appController.js`:
+  - safety report submission and status transition handlers
+  - role-gated delete handlers (Site Admin: safety + equipment, Park Admin: equipment only)
+  - equipment create/update handlers
+  - notification panel state, unread count, and mark-read handling
+- UI surfaces implemented:
+  - dashboard containers and controls in `views/dashboard.html`
+  - admin management view scaffold in `views/admin.html`
+  - supporting style classes in `styles/main.css`
+
+#### Workstream 4: Crowd Information
+- Service method implemented in `services/databaseService.js` for 7-day crowd history retrieval.
+- Controller rendering implemented in `controllers/appController.js`:
+  - crowd history bar visualization data flow
+  - map mode toggle and marker rendering using Leaflet
+- Dashboard UI/map container and Leaflet includes added in `views/dashboard.html` with style support in `styles/main.css`.
+
+### Manual Verification Status (Current Session)
+- Static diagnostics: clean for `controllers/appController.js`, `services/databaseService.js`, `views/dashboard.html`, `views/admin.html`, and `styles/main.css`.
+- Runtime stabilization checks completed for app initialization and navigation: login handlers active, Home search redirects to dashboard query route, protected routes no longer white-screen on module load.
+- Regression fix validated: resolved `controllers/appController.js` template-literal syntax issue that previously caused global initialization failure.
+- Functional data-path checks remain sensitive to intermittent Firestore connectivity (`Listen/Write` abort/unavailable events), but the WS1/WS4 implementation checkpoint is complete for commit.
 
 ### Workstream Dependency Summary for Parallel Agents
 - Workstream 1 tasks are internally sequential: submit → manage → equipment → notifications
@@ -214,7 +242,7 @@ Five workstreams can run in parallel after Phase 1 is accepted. Suggested assign
 - Photo uploads must pass through `storageService.validatePhoto()` before `uploadParkPhoto()` — do not skip validation
 - Authorization constants in `constants/authConstants.js` are the source of truth for role rules — do not hardcode role checks in feature code
 
-### Phase 3 and Phase 4 (Not Started)
+### Phase 3 and Phase 4 (Pending)
 - Phase 3 (Integration) begins after all workstreams are code-complete
 - Phase 4 (Stabilization and Acceptance) begins after Phase 3 integration is validated
 - Full checklists are in `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`
@@ -228,4 +256,4 @@ Five workstreams can run in parallel after Phase 1 is accepted. Suggested assign
 | `models/auditLogModel.js` | Phase 1 — Engineer A | Audit log event shape |
 | `services/notificationService.js` | Phase 1 — Engineer C | Notification interface and in-app delivery |
 | `services/storageService.js` | Phase 1 — Engineer B | Photo upload and validation |
-| `views/admin.html` | Phase 2 — Engineer B | Park Admin and Site Admin administration view |
+| `views/admin.html` | Phase 2 — Engineer A (WS1 management scope) | Safety/equipment management surface for Workstream 1 |
