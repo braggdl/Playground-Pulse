@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Playground Pulse - Dashboard</title>
   <link rel="stylesheet" href="../styles/main.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+    defer
+  ></script>
   <style>
     body.protected-pending {
       visibility: hidden;
@@ -17,7 +29,7 @@
     <nav class="app-nav">
       <a href="./dashboard.html" class="nav-link active">Dashboard</a>
       <a href="./profile.html" class="nav-link">Profile</a>
-      <a href="./admin.html" class="nav-link">Admin</a>
+      <a href="./admin.html" id="nav-admin-link" class="nav-link" style="display: none;">Admin <span id="admin-notification-count" class="badge badge-unread" style="display: none;">0</span></a>
       <button id="logout-btn" class="btn btn-secondary">Logout</button>
     </nav>
   </header>
@@ -33,8 +45,9 @@
 
       <div class="park-management-controls">
         <button id="create-park-btn" class="btn btn-primary" style="display: none;">Create Park</button>
+        <button id="toggle-map-view-btn" class="btn btn-secondary" style="display: none;">Map View</button>
       </div>
-      
+
       <!-- Phase 3: Search and Filter Section -->
       <div class="search-filter-section">
         
@@ -117,6 +130,22 @@
 
         <div id="crowd-report-container" class="crowd-report-container">
           <!-- Crowd report controls rendered here for authenticated users with a selected park -->
+        </div>
+
+        <div id="safety-report-container" class="safety-report-container">
+          <!-- Safety report form and report list are rendered here -->
+        </div>
+
+        <div id="equipment-panel-container" class="equipment-panel-container">
+          <!-- Equipment management panel is rendered here -->
+        </div>
+
+        <div id="crowd-history-container" class="crowd-history-container">
+          <!-- Crowd history timeline is rendered here -->
+        </div>
+
+        <div id="park-map-container" class="park-map-container" style="display: none;">
+          <!-- Leaflet map view is rendered here -->
         </div>
 
         <div id="park-form-container" class="park-form-container">

@@ -3,6 +3,9 @@
 - Currently need to be logged in for search feature to work
     - Don't need an account to search or view park info. Need an account for anything else. 
 - AI: Duplicate auth toggle ID bug
-- Search results are currently case sensitive
+- !! Search results are currently case sensitive
 - Top buttons on Home page are not yet wired
 - Need to get button images so we can use them as buttons later
+- Instructed full Phase 2 Workstream 1 Admin UI implementation of AI. May need to coalesce with Workstream 2 into a uniform UI / web page. 
+- May replace Leaflet with Google Maps after researching Google Maps API / billing account requirements.
+- May replace simple bar chart with Chart library for crowd visualization. 
