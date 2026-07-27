@@ -27,11 +27,13 @@ function isValidEquipmentStatus(status) {
 function createEquipmentModel(partialEquipment = {}) {
   const now = new Date().toISOString();
   const status = partialEquipment.status || EQUIPMENT_STATUSES.OPERATIONAL;
+  const type = String(partialEquipment.type || "playground").trim().toLowerCase();
 
   return {
     id: partialEquipment.id || "",
     parkId: partialEquipment.parkId || "",
     name: partialEquipment.name || "",
+    type: type || "playground",
     status: isValidEquipmentStatus(status) ? status : EQUIPMENT_STATUSES.OPERATIONAL,
     createdAt: partialEquipment.createdAt || now,
     updatedAt: partialEquipment.updatedAt || now

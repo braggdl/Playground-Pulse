@@ -93,6 +93,13 @@ Deliver all Sprint 3 backlog features in parallel workstreams. All workstreams d
 ### Dependencies
 - Requires completion of all Phase 1 deliverables
 
+### Branching and Pull Request Strategy
+- Implement each Sprint 3 workstream on a dedicated feature branch off the accepted Phase 1 baseline.
+- Open a Draft Pull Request early for each workstream and update it incrementally as scope is completed.
+- Keep Workstream 2 changes grouped into reviewable slices (service methods, admin UI/controller wiring, integration/docs) to reduce merge risk.
+- Do not merge workstream branches directly into `main` during development; merge only after Phase 3 integration checks and Phase 4 acceptance gates pass.
+- Rebase feature branches regularly against the baseline branch to minimize drift across parallel workstreams.
+
 ---
 
 ### Workstream 1 — Safety and Maintenance

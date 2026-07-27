@@ -23,13 +23,25 @@ import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "./firebase-config.js";
+import { canPerformAction } from "../constants/authConstants.js";
 import { createParkModel } from "../models/parkModel.js";
-import { createAuditLogModel, isValidAuditEventType } from "../models/auditLogModel.js";
+import {
+  AUDIT_EVENT_TYPES,
+  createAuditLogModel,
+  isValidAuditEventType
+} from "../models/auditLogModel.js";
+import { USER_ROLES } from "../models/userModel.js";
+import { createEquipmentModel, isValidEquipmentStatus } from "../models/equipmentModel.js";
+import { createSafetyReportModel, isValidReportType } from "../models/safetyReportModel.js";
 import { createReviewModel } from "../models/reviewModel.js";
+import { NOTIFICATION_EVENT_TYPES, notifyUser } from "./notificationService.js";
 import { uploadParkPhoto, validatePhoto } from "./storageService.js";
 import {
   BUSY_LEVEL_WEIGHTING_POLICY,
   CROWD_REPORT_POLICY,
+  EQUIPMENT_STATUSES,
+  SAFETY_REPORT_STATUSES,
+  canTransition,
   getBusyLevelLabel,
   getBusyLevelScoreFromCrowdLevel,
   getReportWindowKey,
@@ -69,6 +81,21 @@ function createServiceError(error, fallbackMessage) {
   }
 
   return new Error(error?.message || fallbackMessage);
+}
+
+function buildTrailingDateKeys(days) {
+  const totalDays = Math.max(1, Math.floor(Number(days) || 1));
+  const dateKeys = [];
+  const now = new Date();
+
+  for (let index = totalDays - 1; index >= 0; index -= 1) {
+    const date = new Date(now);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - index);
+    dateKeys.push(date.toISOString().slice(0, 10));
+  }
+
+  return dateKeys;
 }
 
 function getCrowdReportsCollection(db) {
@@ -113,6 +140,64 @@ function sortParksByName(parks = []) {
     const rightName = (right.name || "").toLowerCase();
     return leftName.localeCompare(rightName);
   });
+}
+
+async function getUserRecordByUid(db, uid) {
+  if (!uid) {
+    return null;
+  }
+
+  const directRef = doc(db, "users", uid);
+  const directSnapshot = await getDoc(directRef);
+
+  if (directSnapshot.exists()) {
+    return {
+      id: directSnapshot.id,
+      ref: directRef,
+      data: directSnapshot.data()
+    };
+  }
+
+  const usersQuery = query(collection(db, "users"), where("uid", "==", uid), limit(1));
+  const usersSnapshot = await getDocs(usersQuery);
+
+  if (usersSnapshot.empty) {
+    return null;
+  }
+
+  const foundDoc = usersSnapshot.docs[0];
+  return {
+    id: foundDoc.id,
+    ref: doc(db, "users", foundDoc.id),
+    data: foundDoc.data()
+  };
+}
+
+async function assertAuthorizedUserForAction(db, userId, action) {
+  const actor = await getUserRecordByUid(db, userId);
+
+  if (!actor) {
+    throw new Error("Actor user record not found.");
+  }
+
+  const role = actor.data?.role;
+  if (!canPerformAction(role, action)) {
+    throw new Error("You do not have permission to complete this request.");
+  }
+
+  return actor;
+}
+
+function normalizeModerationAction(action) {
+  if (action === "hide" || action === "disable") {
+    return "hide";
+  }
+
+  if (action === "reinstate") {
+    return "reinstate";
+  }
+
+  return null;
 }
 
 async function queryParksByPrefixField(field, searchPrefix, options = {}) {
@@ -351,7 +436,7 @@ async function deleteRecord(collectionName, recordId) {
  */
 async function searchParks(searchTerm, options = {}) {
   try {
-    return queryParksBySearchTerm(searchTerm, options);
+    return queryParksWithClientFiltering(searchTerm, {}, options);
   } catch (error) {
     throw createServiceError(error, "Search parks failed.");
   }
@@ -375,41 +460,6 @@ async function filterParks(filterCriteria, options = {}) {
  */
 async function searchAndFilterParks(searchTerm, filterCriteria, options = {}) {
   try {
-    const hasSearchTerm = Boolean(normalizeSearchPrefix(searchTerm));
-
-    if (hasSearchTerm) {
-      const predicate = buildParkSearchFilterPredicate(undefined, filterCriteria || {});
-      const pageSize = normalizeParkSearchPageSize(options.pageSize);
-      let cursor = options.startAfter || null;
-      let filteredResults = [];
-      let hasMore = false;
-      let safetyCounter = 0;
-
-      while (filteredResults.length < pageSize && safetyCounter < 10) {
-        safetyCounter += 1;
-        const searchResponse = await queryParksBySearchTerm(searchTerm, {
-          ...options,
-          startAfter: cursor,
-          pageSize
-        });
-
-        filteredResults = filteredResults.concat(searchResponse.results.filter(predicate));
-        cursor = searchResponse.lastDocument;
-        hasMore = searchResponse.hasMore;
-
-        if (!searchResponse.hasMore) {
-          break;
-        }
-      }
-
-      return {
-        results: applyParkSearchPageLimit(filteredResults, options),
-        lastDocument: cursor,
-        pageSize,
-        hasMore
-      };
-    }
-
     return queryParksWithClientFiltering(searchTerm, filterCriteria, options);
   } catch (error) {
     throw createServiceError(error, "Search and filter parks failed.");
@@ -630,6 +680,444 @@ async function submitCrowdReport(parkId, userId, crowdLevel, reportedAt = new Da
     };
   } catch (error) {
     throw createServiceError(error, "Submit crowd report failed.");
+  }
+}
+
+async function createSafetyReport(parkId, userId, reportData = {}) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  const description = String(reportData.description || "").trim();
+  if (!description) {
+    throw new Error("Report description is required.");
+  }
+
+  const type = reportData.type || "hazard";
+  if (!isValidReportType(type)) {
+    throw new Error("Report type must be hazard, injury, concern, safety, or maintenance.");
+  }
+
+  const model = createSafetyReportModel({
+    parkId,
+    userId,
+    type,
+    description,
+    status: SAFETY_REPORT_STATUSES.OPEN,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+
+  const { id, ...payload } = model;
+  return createRecord("safetyReports", payload);
+}
+
+async function getSafetyReports(parkId, filters = {}) {
+  try {
+    const db = getDatabaseService();
+    const safetyReportsRef = collection(db, "safetyReports");
+    const queryConstraints = [];
+
+    if (parkId) {
+      queryConstraints.push(where("parkId", "==", parkId));
+    }
+
+    if (filters.status) {
+      queryConstraints.push(where("status", "==", filters.status));
+    }
+
+    if (filters.type) {
+      queryConstraints.push(where("type", "==", filters.type));
+    }
+
+    const snapshot = queryConstraints.length > 0
+      ? await getDocs(query(safetyReportsRef, ...queryConstraints))
+      : await getDocs(safetyReportsRef);
+
+    const reports = snapshot.docs
+      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }))
+      .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""));
+
+    return reports;
+  } catch (error) {
+    throw createServiceError(error, "Get safety reports failed.");
+  }
+}
+
+async function updateSafetyReportStatus(reportId, newStatus, userId, role) {
+  if (!reportId) {
+    throw new Error("Report ID is required.");
+  }
+
+  if (!newStatus) {
+    throw new Error("New status is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const reportRef = doc(db, "safetyReports", reportId);
+    const reportSnapshot = await getDoc(reportRef);
+
+    if (!reportSnapshot.exists()) {
+      throw new Error("Safety report not found.");
+    }
+
+    const report = { id: reportSnapshot.id, ...reportSnapshot.data() };
+    let parkName = "Unknown park";
+
+    if (report.parkId) {
+      try {
+        const parkSnapshot = await getDoc(doc(db, "parks", report.parkId));
+        if (parkSnapshot.exists()) {
+          parkName = parkSnapshot.data().name || parkName;
+        }
+      } catch (error) {
+        // Keep status transitions non-blocking if park lookups fail.
+      }
+    }
+
+    if (!canTransition(report.status, newStatus, role)) {
+      throw new Error("You are not allowed to perform this status transition.");
+    }
+
+    const updatedAt = new Date().toISOString();
+    const payload = {
+      status: newStatus,
+      updatedAt,
+      lastUpdatedBy: userId
+    };
+
+    await updateDoc(reportRef, payload);
+
+    await logAuditEvent({
+      eventType: "safety_status_changed",
+      actorId: userId,
+      targetId: reportId,
+      parkId: report.parkId,
+      metadata: {
+        fromStatus: report.status,
+        toStatus: newStatus,
+        type: report.type
+      }
+    });
+
+    let notificationWarning = null;
+    try {
+      await notifyUser(report.userId, NOTIFICATION_EVENT_TYPES.SAFETY_REPORT_STATUS_CHANGED, {
+        reportId,
+        parkId: report.parkId,
+        parkName,
+        fromStatus: report.status,
+        toStatus: newStatus,
+        type: report.type,
+        description: report.description || ""
+      });
+    } catch (error) {
+      notificationWarning = error?.message || "Notification delivery failed.";
+    }
+
+    return {
+      ...report,
+      ...payload,
+      notificationWarning
+    };
+  } catch (error) {
+    throw createServiceError(error, "Update safety report status failed.");
+  }
+}
+
+async function deleteSafetyReport(reportId, userId, role) {
+  if (!reportId) {
+    throw new Error("Report ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (!canPerformAction(role, "safetyReportDelete")) {
+    throw new Error("You are not authorized to delete safety reports.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const reportRef = doc(db, "safetyReports", reportId);
+    const reportSnapshot = await getDoc(reportRef);
+
+    if (!reportSnapshot.exists()) {
+      throw new Error("Safety report not found.");
+    }
+
+    const report = { id: reportSnapshot.id, ...reportSnapshot.data() };
+    await deleteDoc(reportRef);
+
+    await logAuditEvent({
+      eventType: "safety_report_deleted",
+      actorId: userId,
+      targetId: reportId,
+      parkId: report.parkId,
+      metadata: {
+        type: report.type || "unknown",
+        previousStatus: report.status || "unknown"
+      }
+    });
+
+    return true;
+  } catch (error) {
+    throw createServiceError(error, "Delete safety report failed.");
+  }
+}
+
+async function getEquipment(parkId) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const equipmentRef = collection(db, "equipment");
+    const equipmentQuery = query(equipmentRef, where("parkId", "==", parkId));
+    const snapshot = await getDocs(equipmentQuery);
+
+    return snapshot.docs
+      .map((equipmentDoc) => ({ id: equipmentDoc.id, ...equipmentDoc.data() }))
+      .sort((left, right) => (left.name || "").localeCompare(right.name || ""));
+  } catch (error) {
+    throw createServiceError(error, "Get equipment failed.");
+  }
+}
+
+async function createEquipment(parkId, equipmentData = {}) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  const name = String(equipmentData.name || "").trim();
+  if (!name) {
+    throw new Error("Equipment name is required.");
+  }
+
+  const model = createEquipmentModel({
+    ...equipmentData,
+    parkId,
+    name,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+
+  const { id, ...payload } = model;
+  return createRecord("equipment", payload);
+}
+
+async function updateEquipmentStatus(equipmentId, newStatus, userId, role) {
+  if (!equipmentId) {
+    throw new Error("Equipment ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (!canPerformAction(role, "equipmentStatusChange")) {
+    throw new Error("You are not authorized to update equipment status.");
+  }
+
+  if (!isValidEquipmentStatus(newStatus)) {
+    throw new Error("Invalid equipment status.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const equipmentRef = doc(db, "equipment", equipmentId);
+    const equipmentSnapshot = await getDoc(equipmentRef);
+
+    if (!equipmentSnapshot.exists()) {
+      throw new Error("Equipment item not found.");
+    }
+
+    const equipment = { id: equipmentSnapshot.id, ...equipmentSnapshot.data() };
+    const payload = {
+      status: newStatus,
+      updatedAt: new Date().toISOString(),
+      lastUpdatedBy: userId
+    };
+
+    await updateDoc(equipmentRef, payload);
+
+    await logAuditEvent({
+      eventType: "equipment_status_changed",
+      actorId: userId,
+      targetId: equipmentId,
+      parkId: equipment.parkId,
+      metadata: {
+        fromStatus: equipment.status,
+        toStatus: newStatus,
+        name: equipment.name
+      }
+    });
+
+    return {
+      ...equipment,
+      ...payload
+    };
+  } catch (error) {
+    throw createServiceError(error, "Update equipment status failed.");
+  }
+}
+
+async function deleteEquipment(equipmentId, userId, role) {
+  if (!equipmentId) {
+    throw new Error("Equipment ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (!canPerformAction(role, "equipmentDelete")) {
+    throw new Error("You are not authorized to delete equipment.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const equipmentRef = doc(db, "equipment", equipmentId);
+    const equipmentSnapshot = await getDoc(equipmentRef);
+
+    if (!equipmentSnapshot.exists()) {
+      throw new Error("Equipment item not found.");
+    }
+
+    const equipment = { id: equipmentSnapshot.id, ...equipmentSnapshot.data() };
+    await deleteDoc(equipmentRef);
+
+    await logAuditEvent({
+      eventType: "equipment_deleted",
+      actorId: userId,
+      targetId: equipmentId,
+      parkId: equipment.parkId,
+      metadata: {
+        name: equipment.name || "",
+        previousStatus: equipment.status || "unknown",
+        type: equipment.type || "unknown"
+      }
+    });
+
+    return true;
+  } catch (error) {
+    throw createServiceError(error, "Delete equipment failed.");
+  }
+}
+
+async function getUserNotifications(userId, options = {}) {
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const notificationsRef = collection(db, "notifications");
+    const snapshot = await getDocs(query(notificationsRef, where("userId", "==", userId)));
+
+    const includeRead = options.includeRead !== false;
+    const limitCount = Math.max(1, Number(options.limitCount || 50));
+
+    const notifications = snapshot.docs
+      .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }))
+      .filter((notification) => (includeRead ? true : !notification.read))
+      .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""))
+      .slice(0, limitCount);
+
+    return notifications;
+  } catch (error) {
+    throw createServiceError(error, "Get notifications failed.");
+  }
+}
+
+async function markNotificationRead(notificationId) {
+  if (!notificationId) {
+    throw new Error("Notification ID is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const notificationRef = doc(db, "notifications", notificationId);
+    await updateDoc(notificationRef, {
+      read: true,
+      readAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    return true;
+  } catch (error) {
+    throw createServiceError(error, "Mark notification as read failed.");
+  }
+}
+
+async function getCrowdHistory(parkId, days = 7) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  const totalDays = Math.max(1, Math.floor(Number(days) || 7));
+  const trailingDateKeys = buildTrailingDateKeys(totalDays);
+  const earliestDateKey = trailingDateKeys[0];
+
+  try {
+    const db = getDatabaseService();
+    const crowdReportsRef = getCrowdReportsCollection(db);
+    const snapshot = await getDocs(query(crowdReportsRef, where("parkId", "==", parkId)));
+
+    const reports = snapshot.docs
+      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }))
+      .filter((report) => String(report.reportedAt || "").slice(0, 10) >= earliestDateKey);
+
+    const grouped = new Map();
+    reports.forEach((report) => {
+      const dateKey = String(report.reportedAt || "").slice(0, 10);
+      if (!dateKey) {
+        return;
+      }
+
+      if (!grouped.has(dateKey)) {
+        grouped.set(dateKey, []);
+      }
+
+      grouped.get(dateKey).push(report);
+    });
+
+    return trailingDateKeys.map((dateKey) => {
+      const dayReports = grouped.get(dateKey) || [];
+      const dayScores = dayReports
+        .map((report) => {
+          if (Number.isFinite(report.busyLevelScore)) {
+            return report.busyLevelScore;
+          }
+
+          return getBusyLevelScoreFromCrowdLevel(report.crowdLevel);
+        })
+        .filter((score) => Number.isFinite(score));
+
+      const averageScore = dayScores.length > 0
+        ? Math.round(dayScores.reduce((sum, score) => sum + score, 0) / dayScores.length)
+        : null;
+
+      return {
+        date: dateKey,
+        reportCount: dayReports.length,
+        averageScore,
+        label: getBusyLevelLabel(averageScore)
+      };
+    });
+  } catch (error) {
+    throw createServiceError(error, "Get crowd history failed.");
   }
 }
 
@@ -894,6 +1382,10 @@ async function logAuditEvent(event = {}) {
     throw new Error("targetId is required.");
   }
 
+  if (!isValidAuditEventType(event.eventType)) {
+    throw new Error("eventType is invalid.");
+  }
+
   try {
     const db = getDatabaseService();
     const auditLogRef = collection(db, "auditLog");
@@ -907,6 +1399,298 @@ async function logAuditEvent(event = {}) {
     return { id: docRef.id };
   } catch (error) {
     throw createServiceError(error, "Log audit event failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.5): Assign a Park Admin to a park.
+ * Site Admin only. Writes assignment metadata to users collection and logs audit event.
+ */
+async function assignParkAdmin(parkId, targetUserId, assignedByUserId) {
+  if (!parkId || !targetUserId || !assignedByUserId) {
+    throw new Error("parkId, targetUserId, and assignedByUserId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const assigner = await assertAuthorizedUserForAction(db, assignedByUserId, "assignParkAdmin");
+
+    const parkRef = doc(db, "parks", parkId);
+    const parkSnapshot = await getDoc(parkRef);
+    if (!parkSnapshot.exists()) {
+      throw new Error("Park not found.");
+    }
+
+    const targetUser = await getUserRecordByUid(db, targetUserId);
+    if (!targetUser) {
+      throw new Error("Target user not found.");
+    }
+
+    const assignedParks = Array.isArray(targetUser.data.assignedParks)
+      ? targetUser.data.assignedParks
+      : [];
+
+    if (!assignedParks.includes(parkId)) {
+      assignedParks.push(parkId);
+    }
+
+    await updateDoc(targetUser.ref, {
+      assignedParks,
+      role: targetUser.data.role || USER_ROLES.PARK_ADMIN,
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.ADMIN_ASSIGNED,
+      actorId: assigner.data.uid || assigner.id,
+      targetId: targetUser.data.uid || targetUser.id,
+      parkId,
+      metadata: {
+        action: "assign_park_admin"
+      }
+    });
+
+    return {
+      success: true,
+      parkId,
+      targetUserId: targetUser.data.uid || targetUser.id,
+      assignedByUserId: assigner.data.uid || assigner.id,
+      assignedParks
+    };
+  } catch (error) {
+    throw createServiceError(error, "Assign park admin failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.5): Remove a Park Admin assignment from a park.
+ * Site Admin only. Writes assignment metadata to users collection and logs audit event.
+ */
+async function removeParkAdmin(parkId, targetUserId, removedByUserId) {
+  if (!parkId || !targetUserId || !removedByUserId) {
+    throw new Error("parkId, targetUserId, and removedByUserId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const remover = await assertAuthorizedUserForAction(db, removedByUserId, "removeParkAdmin");
+
+    const targetUser = await getUserRecordByUid(db, targetUserId);
+    if (!targetUser) {
+      throw new Error("Target user not found.");
+    }
+
+    const assignedParks = (Array.isArray(targetUser.data.assignedParks)
+      ? targetUser.data.assignedParks
+      : []).filter((id) => id !== parkId);
+
+    await updateDoc(targetUser.ref, {
+      assignedParks,
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.ADMIN_REMOVED,
+      actorId: remover.data.uid || remover.id,
+      targetId: targetUser.data.uid || targetUser.id,
+      parkId,
+      metadata: {
+        action: "remove_park_admin"
+      }
+    });
+
+    return {
+      success: true,
+      parkId,
+      targetUserId: targetUser.data.uid || targetUser.id,
+      removedByUserId: remover.data.uid || remover.id,
+      assignedParks
+    };
+  } catch (error) {
+    throw createServiceError(error, "Remove park admin failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.6): Read filtered audit log records.
+ * Site Admin only. Unfiltered full-collection reads are blocked.
+ */
+async function getAuditLog(filters = {}) {
+  const requestedByUserId = filters.requestedByUserId;
+
+  if (!requestedByUserId) {
+    throw new Error("requestedByUserId is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    await assertAuthorizedUserForAction(db, requestedByUserId, "viewAuditLog");
+
+    const constraints = [];
+
+    if (filters.parkId) {
+      constraints.push(where("parkId", "==", filters.parkId));
+    }
+
+    if (filters.actorId) {
+      constraints.push(where("actorId", "==", filters.actorId));
+    }
+
+    if (filters.targetId) {
+      constraints.push(where("targetId", "==", filters.targetId));
+    }
+
+    if (filters.eventType) {
+      if (!isValidAuditEventType(filters.eventType)) {
+        throw new Error("Invalid audit event type filter.");
+      }
+
+      constraints.push(where("eventType", "==", filters.eventType));
+    }
+
+    if (filters.fromTimestamp) {
+      constraints.push(where("timestamp", ">=", filters.fromTimestamp));
+    }
+
+    if (filters.toTimestamp) {
+      constraints.push(where("timestamp", "<=", filters.toTimestamp));
+    }
+
+    if (constraints.length === 0) {
+      throw new Error("At least one filter (parkId, actorId, targetId, eventType, fromTimestamp, toTimestamp) is required.");
+    }
+
+    const maxResults = Number.isFinite(Number(filters.limit))
+      ? Math.max(1, Math.min(Number(filters.limit), 100))
+      : 50;
+
+    const auditQuery = query(
+      collection(db, "auditLog"),
+      ...constraints,
+      orderBy("timestamp", "desc"),
+      limit(maxResults)
+    );
+    const snapshot = await getDocs(auditQuery);
+
+    return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+  } catch (error) {
+    throw createServiceError(error, "Get audit log failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.7): Moderate a review record.
+ * Park Admin may moderate only reviews in assigned parks; Site Admin may moderate all reviews.
+ */
+async function moderateReview(reviewId, action, moderatorId) {
+  if (!reviewId || !action || !moderatorId) {
+    throw new Error("reviewId, action, and moderatorId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const normalizedAction = normalizeModerationAction(action);
+
+    if (!normalizedAction) {
+      throw new Error("Action must be one of: hide, disable, reinstate.");
+    }
+
+    const moderator = await assertAuthorizedUserForAction(db, moderatorId, "moderateContent");
+    const moderatorRole = moderator.data.role;
+    const assignedParks = Array.isArray(moderator.data.assignedParks)
+      ? moderator.data.assignedParks
+      : [];
+
+    const reviewRef = doc(db, "reviews", reviewId);
+    const reviewSnapshot = await getDoc(reviewRef);
+    if (!reviewSnapshot.exists()) {
+      throw new Error("Review not found.");
+    }
+
+    const review = reviewSnapshot.data();
+    if (moderatorRole === USER_ROLES.PARK_ADMIN && !assignedParks.includes(review.parkId)) {
+      throw new Error("Park Admin can moderate reviews only for assigned parks.");
+    }
+
+    await updateDoc(reviewRef, {
+      hidden: normalizedAction === "hide",
+      moderatedBy: moderator.data.uid || moderator.id,
+      moderatedAt: new Date().toISOString(),
+      moderationAction: normalizedAction
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.CONTENT_MODERATED,
+      actorId: moderator.data.uid || moderator.id,
+      targetId: reviewId,
+      parkId: review.parkId || "",
+      metadata: {
+        action: normalizedAction
+      }
+    });
+
+    return {
+      success: true,
+      reviewId,
+      parkId: review.parkId || "",
+      action: normalizedAction,
+      hidden: normalizedAction === "hide"
+    };
+  } catch (error) {
+    throw createServiceError(error, "Moderate review failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.7): Moderate a user account.
+ * Site Admin only.
+ */
+async function moderateUser(targetUserId, action, moderatorId) {
+  if (!targetUserId || !action || !moderatorId) {
+    throw new Error("targetUserId, action, and moderatorId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const normalizedAction = normalizeModerationAction(action);
+
+    if (!normalizedAction) {
+      throw new Error("Action must be one of: hide, disable, reinstate.");
+    }
+
+    const moderator = await assertAuthorizedUserForAction(db, moderatorId, "moderateUser");
+    const targetUser = await getUserRecordByUid(db, targetUserId);
+
+    if (!targetUser) {
+      throw new Error("Target user not found.");
+    }
+
+    await updateDoc(targetUser.ref, {
+      disabled: normalizedAction === "hide",
+      moderationAction: normalizedAction,
+      moderatedBy: moderator.data.uid || moderator.id,
+      moderatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.USER_MODERATED,
+      actorId: moderator.data.uid || moderator.id,
+      targetId: targetUser.data.uid || targetUser.id,
+      parkId: "",
+      metadata: {
+        action: normalizedAction
+      }
+    });
+
+    return {
+      success: true,
+      targetUserId: targetUser.data.uid || targetUser.id,
+      action: normalizedAction,
+      disabled: normalizedAction === "hide"
+    };
+  } catch (error) {
+    throw createServiceError(error, "Moderate user failed.");
   }
 }
 
@@ -933,5 +1717,21 @@ export {
   addFavorite,
   removeFavorite,
   getFavorites,
-  submitParkPhoto
+  submitParkPhoto,
+  assignParkAdmin,
+  removeParkAdmin,
+  getAuditLog,
+  moderateReview,
+  moderateUser,
+  createSafetyReport,
+  getSafetyReports,
+  updateSafetyReportStatus,
+  deleteSafetyReport,
+  getEquipment,
+  createEquipment,
+  updateEquipmentStatus,
+  deleteEquipment,
+  getUserNotifications,
+  markNotificationRead,
+  getCrowdHistory
 };

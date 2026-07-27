@@ -895,6 +895,12 @@ main {
 .search-pagination .btn {
   min-width: 180px;
 }
+
+.state-empty {
+  text-align: center;
+  padding: 1.25rem;
+  background: #fffde7;
+  border-radius: 4px;
   border: 1px solid #ffe082;
 }
 
@@ -1225,6 +1231,14 @@ main {
   .park-map-view {
     height: 320px;
   }
+
+  .admin-panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .crowd-history-bars {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 /* ============================================================
@@ -1429,6 +1443,204 @@ main {
 }
 
 /* ============================================================
+   Sprint 3 Workstream 1 + Workstream 4 UI
+   ============================================================ */
+
+.notification-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.notification-panel-container {
+  margin-bottom: 1rem;
+}
+
+.notification-panel {
+  background: #f8fbff;
+  border: 1px solid #d8e6f5;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.notification-item {
+  border: 1px solid #dfe8f2;
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  background: #fff;
+}
+
+.notification-item.read {
+  opacity: 0.78;
+}
+
+.notification-item p {
+  margin: 0.2rem 0;
+}
+
+.safety-report-container,
+.equipment-panel-container,
+.crowd-history-container,
+.park-map-container {
+  margin-top: 1.25rem;
+}
+
+.safety-report-panel,
+.equipment-panel,
+.crowd-history-panel,
+.admin-panel {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.safety-report-grid,
+.equipment-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.safety-report-item,
+.equipment-item {
+  border: 1px solid #e6e6e6;
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: #fafafa;
+}
+
+.safety-report-item-header,
+.equipment-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.status-action-row {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.status-action-row button {
+  padding: 0.42rem 0.7rem;
+  border-radius: 5px;
+  border: 1px solid #d0d0d0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.admin-workspace .admin-note {
+  margin-top: 0;
+  color: #4f6170;
+}
+
+.admin-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.crowd-history-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.55rem;
+  align-items: end;
+  min-height: 180px;
+}
+
+.crowd-history-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.crowd-history-bar-wrap {
+  width: 100%;
+  min-height: 120px;
+  background: #edf4fb;
+  border: 1px solid #d9e4f0;
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.crowd-history-bar {
+  width: 100%;
+  background: linear-gradient(180deg, #5aa7f7 0%, #2d6fb2 100%);
+  border-radius: 6px 6px 0 0;
+  transition: height 0.2s ease;
+}
+
+.crowd-history-date {
+  font-size: 0.78rem;
+  color: #526273;
+}
+
+.park-map-container {
+  background: #fff;
+  border: 1px solid #d5e2ef;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.park-map-view {
+  width: 100%;
+  height: 420px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.map-marker-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-top: 0.35rem;
+}
+
+.map-marker-badge.low {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.map-marker-badge.moderate {
+  background: #fff8e1;
+  color: #f57f17;
+}
+
+.map-marker-badge.busy {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.map-marker-badge.very-busy {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.map-marker-badge.unknown {
+  background: #eceff1;
+  color: #455a64;
+}
+
+/* ============================================================
    Sprint 3 — 375px Mobile Breakpoint
    Single-column stacking and touch-friendly sizing for all
    Sprint 3 surfaces. Desktop behavior is unchanged.
@@ -1534,6 +1746,10 @@ main {
 
   .park-map-view {
     height: 260px;
+  }
+
+  .crowd-history-bars {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .star-rating .star {

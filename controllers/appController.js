@@ -7,19 +7,36 @@
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 import { initializeAuthController, handleLogout } from "./authController.js";
 import { USER_ROLES } from "../models/userModel.js";
+import { canPerformAction } from "../constants/authConstants.js";
 import { PARK_SEARCH_DEFAULTS } from "../constants/searchConstants.js";
 import {
-  addFavorite,
+  EQUIPMENT_STATUSES,
+  EQUIPMENT_STATUS_LABELS,
+  SAFETY_REPORT_STATUSES,
+  SAFETY_REPORT_TRANSITIONS
+} from "../constants/reportConstants.js";
+import {
   calculateBusyLevelFromReports,
+  addFavorite,
   createReview,
+  createEquipment,
+  createSafetyReport,
+  deleteEquipment,
+  deleteSafetyReport,
+  getCrowdHistory,
+  getEquipment,
   getFavorites,
+  getSafetyReports,
+  getUserNotifications,
   getParkById,
   getRecentCrowdReportsForPark,
   getReviews,
+  markNotificationRead,
   removeFavorite,
   submitCrowdReport,
   submitParkPhoto
 } from "../services/databaseService.js";
+import { subscribeToUserNotifications } from "../services/notificationService.js";
 import {
   getFirebaseServices,
   initializeFirebaseServices
@@ -27,8 +44,15 @@ import {
 import {
   createParkRecord,
   editParkRecord,
+  getAuditLog,
   readRecords,
+  assignParkAdmin,
+  moderateReview,
+  moderateUser,
+  removeParkAdmin,
   updateRecord,
+  updateEquipmentStatus,
+  updateSafetyReportStatus,
   searchAndFilterParks
 } from "../services/databaseService.js";
 
@@ -85,7 +109,46 @@ const appState = {
   favoriteError: null,
   photoSubmitting: false,
   photoError: null,
-  photoSuccess: null
+  photoSuccess: null,
+  // Sprint 3 Workstream 1: safety, equipment, notifications.
+  safetyReportDescription: "",
+  safetyReportType: "hazard",
+  safetyReportSubmitting: false,
+  safetyReportError: null,
+  safetyReportSuccess: null,
+  safetyReports: [],
+  safetyReportsLoading: false,
+  safetyReportStatusFilter: "",
+  equipmentNameInput: "",
+  equipmentTypeInput: "playground",
+  equipmentSubmitting: false,
+  equipmentError: null,
+  equipmentSuccess: null,
+  equipmentItems: [],
+  equipmentLoading: false,
+  notifications: [],
+  notificationsPanelOpen: false,
+  notificationsError: null,
+  unreadNotificationCount: 0,
+  notificationsUnsubscribe: null,
+  // Sprint 3 Workstream 4: map and crowd history.
+  crowdHistory: [],
+  crowdHistoryError: null,
+  mapMode: false,
+  mapInstance: null,
+  mapMarkersLayer: null,
+  // Admin view state.
+  adminParks: [],
+  adminSelectedParkId: "",
+  adminPanelError: null,
+  // Sprint 3 Workstream 2: administration actions and audit.
+  admin: {
+    actionMessage: null,
+    actionError: false,
+    isSubmitting: false,
+    auditEntries: [],
+    isLoadingAudit: false
+  }
 };
 
 function getCurrentView() {
@@ -103,6 +166,10 @@ function getCurrentView() {
     return "profile";
   }
 
+  if (pathName.endsWith("admin.html")) {
+    return "admin";
+  }
+
   if (pathName.endsWith("home.html")) {
     return "home";
   }
@@ -111,7 +178,7 @@ function getCurrentView() {
 }
 
 function isProtectedView(viewName) {
-  return ["dashboard", "profile"].includes(viewName);
+  return ["dashboard", "profile", "admin"].includes(viewName);
 }
 
 function hideProtectedViewUntilAuthReady() {
@@ -155,6 +222,27 @@ function canEditParkRecord() {
 function canDeleteParkRecord() {
   const role = getCurrentUserRole();
   return role === USER_ROLES.SITE_ADMIN;
+}
+
+function canAccessAdminView() {
+  const role = getCurrentUserRole();
+  return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
+}
+
+function canManageSafetyReports() {
+  return canPerformAction(getCurrentUserRole(), "safetyReportTransition");
+}
+
+function canManageEquipment() {
+  return canPerformAction(getCurrentUserRole(), "equipmentStatusChange");
+}
+
+function canDeleteSafetyReports() {
+  return canPerformAction(getCurrentUserRole(), "safetyReportDelete");
+}
+
+function canDeleteEquipmentRecords() {
+  return canPerformAction(getCurrentUserRole(), "equipmentDelete");
 }
 
 function enforceRoleOrThrow(requiredRoles) {
@@ -212,6 +300,189 @@ function renderBusyLevelBadge(busyLevel = {}) {
   const scoreSuffix = score !== null ? ` <span class="busy-level-score">${escapeHtml(String(score))}</span>` : "";
 
   return `<span class="busy-level-pill ${toneClass}">${escapeHtml(label)}${scoreSuffix}</span>`;
+}
+
+function getSafetyReportBadgeClass(status) {
+  switch (status) {
+    case SAFETY_REPORT_STATUSES.OPEN:
+      return "badge-open";
+    case SAFETY_REPORT_STATUSES.IN_REVIEW:
+      return "badge-in-review";
+    case SAFETY_REPORT_STATUSES.RESOLVED:
+      return "badge-resolved";
+    case SAFETY_REPORT_STATUSES.CLOSED:
+      return "badge-closed";
+    default:
+      return "badge-closed";
+  }
+}
+
+function getEquipmentBadgeClass(status) {
+  switch (status) {
+    case EQUIPMENT_STATUSES.OPERATIONAL:
+      return "badge-operational";
+    case EQUIPMENT_STATUSES.NEEDS_REPAIR:
+      return "badge-needs-repair";
+    case EQUIPMENT_STATUSES.OUT_OF_SERVICE:
+      return "badge-out-of-service";
+    default:
+      return "badge-out-of-service";
+  }
+}
+
+function formatSafetyReportType(type) {
+  switch (String(type || "").toLowerCase()) {
+    case "hazard":
+      return "Hazard";
+    case "injury":
+      return "Injury";
+    case "concern":
+      return "General Concern";
+    case "safety":
+      return "Safety";
+    case "maintenance":
+      return "Maintenance";
+    default:
+      return "Report";
+  }
+}
+
+function formatEquipmentType(type) {
+  switch (String(type || "").toLowerCase()) {
+    case "playground":
+      return "Playground";
+    case "surface":
+      return "Surface";
+    case "facility":
+      return "Facility";
+    default:
+      return "-";
+  }
+}
+
+function formatStatusLabel(value) {
+  return String(value || "")
+    .split("_")
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+function formatNotificationTitle(notification = {}) {
+  if (notification.title) {
+    return notification.title;
+  }
+
+  if (notification.event === "safety_report_status_changed") {
+    const parkName = notification.payload?.parkName || "Unknown park";
+    return `Safety report updated: ${parkName}`;
+  }
+
+  return "Update";
+}
+
+function formatNotificationMessage(notification = {}) {
+  if (notification.message) {
+    return notification.message;
+  }
+
+  if (notification.payload?.message) {
+    return notification.payload.message;
+  }
+
+  if (notification.event === "safety_report_status_changed") {
+    const reportType = notification.payload?.type || "safety report";
+    const fromStatus = formatStatusLabel(notification.payload?.fromStatus) || "Unknown";
+    const toStatus = formatStatusLabel(notification.payload?.toStatus) || "Unknown";
+    return `${reportType} status changed from ${fromStatus} to ${toStatus}.`;
+  }
+
+  return "A new update is available.";
+}
+
+function formatShortDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function normalizeNotificationList(notifications = []) {
+  const normalized = [...notifications].map((notification) => ({
+    ...notification,
+    isRead: typeof notification.isRead === "boolean" ? notification.isRead : Boolean(notification.read)
+  }));
+
+  const sorted = normalized.sort((left, right) => {
+    const leftTime = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+    const rightTime = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+    return rightTime - leftTime;
+  });
+
+  appState.notifications = sorted;
+  appState.unreadNotificationCount = sorted.filter((notification) => !notification.isRead).length;
+}
+
+function getParkCoordinates(park) {
+  if (!park) {
+    return null;
+  }
+
+  const lat = Number(park.latitude ?? park.lat);
+  const lng = Number(park.longitude ?? park.lng ?? park.lon);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  return [lat, lng];
+}
+
+function getBusyLevelMapClass(label) {
+  const normalized = String(label || "Unknown").toLowerCase();
+
+  if (normalized === "low") {
+    return "low";
+  }
+
+  if (normalized === "moderate") {
+    return "moderate";
+  }
+
+  if (normalized === "busy") {
+    return "busy";
+  }
+
+  if (normalized === "very busy") {
+    return "very-busy";
+  }
+
+  return "unknown";
+}
+
+function getBusyLevelMapColor(label) {
+  const statusClass = getBusyLevelMapClass(label);
+  switch (statusClass) {
+    case "low":
+      return "#2e7d32";
+    case "moderate":
+      return "#f57f17";
+    case "busy":
+      return "#e65100";
+    case "very-busy":
+      return "#c62828";
+    default:
+      return "#546e7a";
+  }
 }
 
 function clearCrowdReportState() {
@@ -311,6 +582,120 @@ async function persistCrowdReportParkState(updatedPark) {
   };
 }
 
+async function loadSafetyReportsForSelectedPark() {
+  if (!appState.selectedPark?.id) {
+    appState.safetyReports = [];
+    return;
+  }
+
+  appState.safetyReportsLoading = true;
+  try {
+    appState.safetyReports = await getSafetyReports(appState.selectedPark.id, {
+      status: appState.safetyReportStatusFilter || null
+    });
+  } finally {
+    appState.safetyReportsLoading = false;
+  }
+}
+
+async function loadEquipmentForSelectedPark() {
+  if (!appState.selectedPark?.id) {
+    appState.equipmentItems = [];
+    return;
+  }
+
+  appState.equipmentLoading = true;
+  try {
+    appState.equipmentItems = await getEquipment(appState.selectedPark.id);
+  } finally {
+    appState.equipmentLoading = false;
+  }
+}
+
+async function loadCrowdHistoryForSelectedPark() {
+  if (!appState.selectedPark?.id) {
+    appState.crowdHistory = [];
+    appState.crowdHistoryError = null;
+    return;
+  }
+
+  try {
+    appState.crowdHistory = await getCrowdHistory(appState.selectedPark.id, 7);
+    appState.crowdHistoryError = null;
+  } catch (error) {
+    appState.crowdHistoryError = formatAppError(error, "Unable to load crowd history.");
+    appState.crowdHistory = [];
+  }
+}
+
+async function loadSprint3DetailData() {
+  if (!appState.selectedPark?.id) {
+    appState.safetyReports = [];
+    appState.equipmentItems = [];
+    appState.crowdHistory = [];
+    return;
+  }
+
+  await Promise.all([
+    loadSafetyReportsForSelectedPark(),
+    loadEquipmentForSelectedPark(),
+    loadCrowdHistoryForSelectedPark()
+  ]);
+}
+
+async function loadAdminParkOptions() {
+  if (appState.currentView !== "admin") {
+    return;
+  }
+
+  appState.adminParks = await readRecords("parks", {});
+  if (!appState.adminSelectedParkId && appState.adminParks.length > 0) {
+    appState.adminSelectedParkId = appState.adminParks[0].id;
+  }
+}
+
+function stopNotificationsSubscription() {
+  if (typeof appState.notificationsUnsubscribe === "function") {
+    appState.notificationsUnsubscribe();
+  }
+
+  appState.notificationsUnsubscribe = null;
+}
+
+async function startNotificationsSubscription() {
+  if (!appState.currentUser?.uid) {
+    stopNotificationsSubscription();
+    normalizeNotificationList([]);
+    return;
+  }
+
+  stopNotificationsSubscription();
+
+  try {
+    const initialNotifications = await getUserNotifications(appState.currentUser.uid, {
+      limitCount: 20,
+      includeRead: true
+    });
+    normalizeNotificationList(initialNotifications);
+    renderNotificationPanel();
+  } catch (error) {
+    appState.notificationsError = formatAppError(error, "Unable to load notifications.");
+  }
+
+  appState.notificationsUnsubscribe = subscribeToUserNotifications(
+    appState.currentUser.uid,
+    (notifications) => {
+      normalizeNotificationList(notifications);
+      appState.notificationsError = null;
+      renderNotificationPanel();
+    },
+    (error) => {
+      appState.notificationsError = formatAppError(error, "Unable to subscribe to notifications.");
+      renderNotificationPanel();
+    }
+  );
+}
+
 function renderCrowdReportPanel() {
   const reportContainer = document.getElementById("crowd-report-container");
   if (!reportContainer) {
@@ -366,6 +751,417 @@ function renderCrowdReportPanel() {
   `;
 }
 
+function renderNotificationPanel() {
+  const toggleButton = document.getElementById("admin-notifications-toggle-btn");
+  const unreadBadge = document.getElementById("admin-notification-unread-count");
+  const adminNavBadge = document.getElementById("admin-notification-count");
+  const panelContainer = document.getElementById("notification-panel-container");
+
+  const isAdminCapable = isAuthenticated() && (canManageSafetyReports() || canManageEquipment());
+  const canShowNotifications = isAdminCapable && appState.currentView === "admin";
+
+  if (toggleButton) {
+    toggleButton.style.display = canShowNotifications ? "inline-flex" : "none";
+  }
+
+  if (unreadBadge) {
+    const hasUnread = appState.unreadNotificationCount > 0;
+    unreadBadge.style.display = hasUnread ? "inline-block" : "none";
+    unreadBadge.textContent = String(appState.unreadNotificationCount);
+  }
+
+  if (adminNavBadge) {
+    const hasUnread = appState.unreadNotificationCount > 0;
+    adminNavBadge.style.display = hasUnread ? "inline-block" : "none";
+    adminNavBadge.textContent = String(appState.unreadNotificationCount);
+  }
+
+  if (!panelContainer || !canShowNotifications) {
+    if (panelContainer) {
+      panelContainer.innerHTML = "";
+    }
+    return;
+  }
+
+  if (!appState.notificationsPanelOpen) {
+    panelContainer.innerHTML = "";
+    return;
+  }
+
+  panelContainer.innerHTML = `
+    <section class="notification-panel card">
+      <h3>Notifications</h3>
+      ${appState.notificationsError ? `<p class="crowd-report-error crowd-report-message">${escapeHtml(appState.notificationsError)}</p>` : ""}
+      ${appState.notifications.length === 0 ? "<p>No notifications yet.</p>" : ""}
+      <ul class="notification-list">
+        ${appState.notifications.map((notification) => `
+          <li class="notification-item ${notification.isRead ? "read" : ""}">
+            <p><strong>${escapeHtml(formatNotificationTitle(notification))}</strong></p>
+            <p>${escapeHtml(formatNotificationMessage(notification))}</p>
+            ${notification.payload?.parkName ? `<p class="crowd-report-meta">Park: ${escapeHtml(notification.payload.parkName)}</p>` : ""}
+            <p class="crowd-report-meta">${escapeHtml(formatDisplayDateTime(notification.createdAt))}</p>
+            ${notification.isRead ? "" : `<button class="btn btn-secondary" onclick="window.appControllerExports.markNotificationRead('${notification.id}')">Mark as read</button>`}
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function renderSafetyReportPanel() {
+  const container = document.getElementById("safety-report-container");
+  if (!container) {
+    return;
+  }
+
+  if (!isAuthenticated() || !appState.selectedPark) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const canManage = canManageSafetyReports();
+  const canDelete = canDeleteSafetyReports();
+
+  container.innerHTML = `
+    <section class="safety-report-panel card">
+      <h3>Safety Reports</h3>
+      ${appState.safetyReportError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.safetyReportError)}</p>` : ""}
+      ${appState.safetyReportSuccess ? `<p class="crowd-report-message crowd-report-success">${escapeHtml(appState.safetyReportSuccess)}</p>` : ""}
+
+      <form class="safety-report-form" onsubmit="event.preventDefault(); window.appControllerExports.submitSafetyReport();">
+        <div class="form-group">
+          <label for="safety-report-type">Report Type</label>
+          <select id="safety-report-type" onchange="window.appControllerExports.updateSafetyReportType(this.value)">
+            <option value="hazard" ${appState.safetyReportType === "hazard" ? "selected" : ""}>Hazard</option>
+            <option value="injury" ${appState.safetyReportType === "injury" ? "selected" : ""}>Injury</option>
+            <option value="concern" ${appState.safetyReportType === "concern" ? "selected" : ""}>General Concern</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="safety-report-description">Description</label>
+          <textarea id="safety-report-description" rows="3" oninput="window.appControllerExports.updateSafetyReportDescription(this.value)" placeholder="Describe what you observed...">${escapeHtml(appState.safetyReportDescription)}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" ${appState.safetyReportSubmitting ? "disabled" : ""}>
+          ${appState.safetyReportSubmitting ? "Submitting..." : "Submit Safety Report"}
+        </button>
+      </form>
+
+      <div class="status-action-row" style="margin-top: 1rem;">
+        <label for="safety-report-status-filter"><strong>Filter:</strong></label>
+        <select id="safety-report-status-filter" onchange="window.appControllerExports.updateSafetyReportFilter(this.value)">
+          <option value="" ${appState.safetyReportStatusFilter === "" ? "selected" : ""}>All statuses</option>
+          <option value="open" ${appState.safetyReportStatusFilter === "open" ? "selected" : ""}>Open</option>
+          <option value="in_review" ${appState.safetyReportStatusFilter === "in_review" ? "selected" : ""}>In Review</option>
+          <option value="resolved" ${appState.safetyReportStatusFilter === "resolved" ? "selected" : ""}>Resolved</option>
+          <option value="closed" ${appState.safetyReportStatusFilter === "closed" ? "selected" : ""}>Closed</option>
+        </select>
+      </div>
+
+      <div class="safety-report-grid" style="margin-top: 1rem;">
+        ${appState.safetyReportsLoading ? "<p>Loading safety reports...</p>" : ""}
+        ${!appState.safetyReportsLoading && appState.safetyReports.length === 0 ? "<p>No safety reports yet for this park.</p>" : ""}
+        ${appState.safetyReports.map((report) => {
+          const transitionOptions = SAFETY_REPORT_TRANSITIONS[report.status] || [];
+          return `
+            <article class="safety-report-item">
+              <div class="safety-report-item-header">
+                <strong>${escapeHtml(formatSafetyReportType(report.type || report.reportType))}</strong>
+                <span class="badge ${getSafetyReportBadgeClass(report.status)}">${escapeHtml(report.status || "unknown")}</span>
+              </div>
+              <p>${escapeHtml(report.description || "No description provided.")}</p>
+              <p class="crowd-report-meta">Reported: ${escapeHtml(formatDisplayDateTime(report.createdAt))}</p>
+              ${canManage && transitionOptions.length > 0 ? `
+                <div class="status-action-row">
+                  ${transitionOptions.map((status) => `
+                    <button type="button" onclick="window.appControllerExports.transitionSafetyReport('${report.id}', '${status}')">
+                      Mark ${escapeHtml(status)}
+                    </button>
+                  `).join("")}
+                  ${canDelete ? `<button type="button" onclick="window.appControllerExports.deleteSafetyReport('${report.id}')">Delete Report</button>` : ""}
+                </div>
+              ` : (canDelete ? `
+                <div class="status-action-row">
+                  <button type="button" onclick="window.appControllerExports.deleteSafetyReport('${report.id}')">Delete Report</button>
+                </div>
+              ` : "")}
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderEquipmentPanel() {
+  const container = document.getElementById("equipment-panel-container");
+  if (!container) {
+    return;
+  }
+
+  if (!isAuthenticated() || !appState.selectedPark) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const canManage = canManageEquipment();
+  const canDelete = canDeleteEquipmentRecords();
+
+  container.innerHTML = `
+    <section class="equipment-panel card">
+      <h3>Equipment Status</h3>
+      ${appState.equipmentError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.equipmentError)}</p>` : ""}
+      ${appState.equipmentSuccess ? `<p class="crowd-report-message crowd-report-success">${escapeHtml(appState.equipmentSuccess)}</p>` : ""}
+
+      ${canManage ? `
+        <form class="equipment-form" onsubmit="event.preventDefault(); window.appControllerExports.submitEquipment();">
+          <div class="form-group">
+            <label for="equipment-name">Equipment Name</label>
+            <input id="equipment-name" type="text" value="${escapeHtml(appState.equipmentNameInput)}" oninput="window.appControllerExports.updateEquipmentName(this.value)" placeholder="e.g., Swing Set" />
+          </div>
+          <div class="form-group">
+            <label for="equipment-type">Type</label>
+            <select id="equipment-type" onchange="window.appControllerExports.updateEquipmentType(this.value)">
+              <option value="playground" ${appState.equipmentTypeInput === "playground" ? "selected" : ""}>Playground</option>
+              <option value="surface" ${appState.equipmentTypeInput === "surface" ? "selected" : ""}>Surface</option>
+              <option value="facility" ${appState.equipmentTypeInput === "facility" ? "selected" : ""}>Facility</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" ${appState.equipmentSubmitting ? "disabled" : ""}>
+            ${appState.equipmentSubmitting ? "Saving..." : "Add Equipment"}
+          </button>
+        </form>
+      ` : ""}
+
+      <div class="equipment-grid" style="margin-top: 1rem;">
+        ${appState.equipmentLoading ? "<p>Loading equipment...</p>" : ""}
+        ${!appState.equipmentLoading && appState.equipmentItems.length === 0 ? "<p>No equipment records available.</p>" : ""}
+        ${appState.equipmentItems.map((equipment) => `
+          <article class="equipment-item">
+            <div class="equipment-item-header">
+              <strong>${escapeHtml(equipment.name || "Unnamed Equipment")}</strong>
+              <span class="badge ${getEquipmentBadgeClass(equipment.status)}">${escapeHtml(EQUIPMENT_STATUS_LABELS[equipment.status] || equipment.status || "Unknown")}</span>
+            </div>
+            <p class="crowd-report-meta">Type: ${escapeHtml(formatEquipmentType(equipment.type || equipment.equipmentType))}</p>
+            ${canManage || canDelete ? `
+              <div class="status-action-row">
+                ${Object.values(EQUIPMENT_STATUSES).map((status) => `
+                  <button type="button" onclick="window.appControllerExports.transitionEquipmentStatus('${equipment.id}', '${status}')">${escapeHtml(EQUIPMENT_STATUS_LABELS[status] || status)}</button>
+                `).join("")}
+                ${canDelete ? `<button type="button" onclick="window.appControllerExports.deleteEquipment('${equipment.id}')">Delete Equipment</button>` : ""}
+              </div>
+            ` : ""}
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCrowdHistoryPanel() {
+  const container = document.getElementById("crowd-history-container");
+  if (!container) {
+    return;
+  }
+
+  if (!appState.selectedPark) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const maxCount = appState.crowdHistory.reduce((max, item) => Math.max(max, Number(item.reportCount || 0)), 0);
+
+  container.innerHTML = `
+    <section class="crowd-history-panel card">
+      <h3>7-Day Crowd Trend</h3>
+      ${appState.crowdHistoryError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.crowdHistoryError)}</p>` : ""}
+      ${appState.crowdHistory.length === 0 ? "<p>No crowd history is available yet for this park.</p>" : `
+        <div class="crowd-history-bars">
+          ${appState.crowdHistory.map((day) => {
+            const count = Number(day.reportCount || 0);
+            const percent = maxCount > 0 ? Math.max(8, Math.round((count / maxCount) * 100)) : 8;
+            return `
+              <div class="crowd-history-day">
+                <div class="crowd-history-bar-wrap">
+                  <div class="crowd-history-bar" style="height: ${percent}%;" title="${count} report(s)"></div>
+                </div>
+                <strong>${count}</strong>
+                <span class="crowd-history-date">${escapeHtml(formatShortDate(day.date))}</span>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `}
+    </section>
+  `;
+}
+
+function renderMapPanel() {
+  const container = document.getElementById("park-map-container");
+  if (!container) {
+    return;
+  }
+
+  const toggleButton = document.getElementById("toggle-map-view-btn");
+  if (toggleButton) {
+    const shouldShowToggle = isAuthenticated() && appState.currentView === "dashboard";
+    toggleButton.style.display = shouldShowToggle ? "inline-flex" : "none";
+    toggleButton.textContent = appState.mapMode ? "Hide Map" : "Map View";
+  }
+
+  if (!appState.mapMode || appState.currentView !== "dashboard") {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "block";
+  container.innerHTML = `
+    <section class="card">
+      <h3>Park Map View</h3>
+      <div id="leaflet-map-canvas" class="park-map-view"></div>
+    </section>
+  `;
+
+  if (!window.L) {
+    container.innerHTML += "<p class='crowd-report-message crowd-report-error'>Map library failed to load.</p>";
+    return;
+  }
+
+  const mapElement = document.getElementById("leaflet-map-canvas");
+  if (!mapElement) {
+    return;
+  }
+
+  if (!appState.mapInstance) {
+    appState.mapInstance = window.L.map(mapElement).setView([39.5, -98.35], 4);
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(appState.mapInstance);
+    appState.mapMarkersLayer = window.L.layerGroup().addTo(appState.mapInstance);
+  } else {
+    appState.mapInstance.invalidateSize();
+  }
+
+  if (appState.mapMarkersLayer) {
+    appState.mapMarkersLayer.clearLayers();
+  }
+
+  const parksWithCoordinates = appState.parkResults
+    .map((park) => ({ park, coordinates: getParkCoordinates(park) }))
+    .filter((item) => Array.isArray(item.coordinates));
+
+  if (parksWithCoordinates.length === 0) {
+    return;
+  }
+
+  const bounds = [];
+  parksWithCoordinates.forEach(({ park, coordinates }) => {
+    const busyLabel = park.busyLevel?.label || "Unknown";
+    const marker = window.L.circleMarker(coordinates, {
+      radius: 8,
+      color: getBusyLevelMapColor(busyLabel),
+      fillColor: getBusyLevelMapColor(busyLabel),
+      fillOpacity: 0.8,
+      weight: 2
+    });
+
+    marker.bindPopup(`
+      <strong>${escapeHtml(park.name || "Park")}</strong><br />
+      ${escapeHtml(park.location || "")}
+      <div class="map-marker-badge ${getBusyLevelMapClass(busyLabel)}">${escapeHtml(busyLabel)}</div>
+      <div style="margin-top: 0.5rem;">
+        <button type="button" onclick="window.appControllerExports.selectParkForDetail('${park.id}')">Open Detail</button>
+      </div>
+    `);
+
+    marker.addTo(appState.mapMarkersLayer);
+    bounds.push(coordinates);
+  });
+
+  if (bounds.length > 0) {
+    appState.mapInstance.fitBounds(bounds, { padding: [25, 25] });
+  }
+}
+
+function renderAdminPanels() {
+  const safetyPanel = document.getElementById("admin-safety-panel");
+  const equipmentPanel = document.getElementById("admin-equipment-panel");
+  const statusPanel = document.getElementById("admin-workstream1-status");
+
+  if (!safetyPanel || !equipmentPanel || !statusPanel) {
+    return;
+  }
+
+  const canDeleteSafety = canDeleteSafetyReports();
+  const canDeleteEquipmentItems = canDeleteEquipmentRecords();
+
+  if (!canManageSafetyReports() && !canManageEquipment()) {
+    safetyPanel.innerHTML = "<h3>Safety Reports</h3><p>You do not have permission to manage safety reports.</p>";
+    equipmentPanel.innerHTML = "<h3>Equipment Status</h3><p>You do not have permission to manage equipment records.</p>";
+    statusPanel.innerHTML = "<p>Use a Park Admin or Site Admin account for Workstream 1 management actions.</p>";
+    return;
+  }
+
+  const selectedParkId = appState.adminSelectedParkId || "";
+
+  safetyPanel.innerHTML = `
+    <h3>Safety Report Queue</h3>
+    <div class="form-group">
+      <label for="admin-park-selector">Selected Park</label>
+      <select id="admin-park-selector" onchange="window.appControllerExports.selectAdminPark(this.value)">
+        ${appState.adminParks.map((park) => `
+          <option value="${escapeHtml(park.id)}" ${park.id === selectedParkId ? "selected" : ""}>${escapeHtml(park.name)}</option>
+        `).join("")}
+      </select>
+    </div>
+    <div class="safety-report-grid">
+      ${appState.safetyReports.map((report) => `
+        <article class="safety-report-item">
+          <div class="safety-report-item-header">
+            <strong>${escapeHtml(formatSafetyReportType(report.type || report.reportType))}</strong>
+            <span class="badge ${getSafetyReportBadgeClass(report.status)}">${escapeHtml(report.status || "unknown")}</span>
+          </div>
+          <p>${escapeHtml(report.description || "")}</p>
+          <p class="crowd-report-meta">${escapeHtml(formatDisplayDateTime(report.createdAt))}</p>
+          <div class="status-action-row">
+            ${(SAFETY_REPORT_TRANSITIONS[report.status] || []).map((status) => `
+              <button type="button" onclick="window.appControllerExports.transitionSafetyReport('${report.id}', '${status}')">${escapeHtml(status)}</button>
+            `).join("")}
+            ${canDeleteSafety ? `<button type="button" onclick="window.appControllerExports.deleteSafetyReport('${report.id}')">Delete Report</button>` : ""}
+          </div>
+        </article>
+      `).join("")}
+      ${appState.safetyReports.length === 0 ? "<p>No safety reports found for this park.</p>" : ""}
+    </div>
+  `;
+
+  equipmentPanel.innerHTML = `
+    <h3>Equipment Status Queue</h3>
+    <div class="equipment-grid">
+      ${appState.equipmentItems.map((equipment) => `
+        <article class="equipment-item">
+          <div class="equipment-item-header">
+            <strong>${escapeHtml(equipment.name || "Unnamed")}</strong>
+            <span class="badge ${getEquipmentBadgeClass(equipment.status)}">${escapeHtml(EQUIPMENT_STATUS_LABELS[equipment.status] || equipment.status || "Unknown")}</span>
+          </div>
+          <p class="crowd-report-meta">Type: ${escapeHtml(formatEquipmentType(equipment.type || equipment.equipmentType))}</p>
+          <div class="status-action-row">
+            ${Object.values(EQUIPMENT_STATUSES).map((status) => `
+              <button type="button" onclick="window.appControllerExports.transitionEquipmentStatus('${equipment.id}', '${status}')">${escapeHtml(EQUIPMENT_STATUS_LABELS[status] || status)}</button>
+            `).join("")}
+            ${canDeleteEquipmentItems ? `<button type="button" onclick="window.appControllerExports.deleteEquipment('${equipment.id}')">Delete Equipment</button>` : ""}
+          </div>
+        </article>
+      `).join("")}
+      ${appState.equipmentItems.length === 0 ? "<p>No equipment records found for this park.</p>" : ""}
+    </div>
+  `;
+
+  statusPanel.innerHTML = `
+    ${appState.adminPanelError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.adminPanelError)}</p>` : "<p>Workstream 1 management actions are ready.</p>"}
+  `;
+}
+
 async function submitCrowdReportFromSelection() {
   try {
     if (!isAuthenticated()) {
@@ -411,6 +1207,501 @@ function clearCrowdReportSelection() {
   renderCrowdReportPanel();
 }
 
+function setAdminActionMessage(message, isError = false) {
+  appState.admin.actionMessage = message;
+  appState.admin.actionError = isError;
+
+  const actionContainer = document.getElementById("admin-action-message");
+  if (!actionContainer) {
+    return;
+  }
+
+  if (!message) {
+    actionContainer.style.display = "none";
+    actionContainer.textContent = "";
+    actionContainer.className = "";
+    return;
+  }
+
+  actionContainer.style.display = "block";
+  actionContainer.textContent = message;
+  actionContainer.className = isError ? "error-message show" : "park-form-success";
+}
+
+function renderAdminRoleVisibility() {
+  const roleValue = document.getElementById("admin-role-value");
+  if (roleValue) {
+    roleValue.textContent = appState.userRole || "Unknown";
+  }
+
+  const accessMessage = document.getElementById("admin-access-message");
+  const assignmentPanel = document.getElementById("admin-assignment-panel");
+  const moderationPanel = document.getElementById("admin-moderation-panel");
+  const userModerationSection = document.getElementById("admin-user-moderation-section");
+  const auditPanel = document.getElementById("admin-audit-panel");
+
+  if (!canAccessAdminView()) {
+    if (accessMessage) {
+      accessMessage.style.display = "block";
+      accessMessage.textContent = "You do not have permission to access administration tools.";
+      accessMessage.className = "error-message show";
+    }
+
+    if (assignmentPanel) assignmentPanel.style.display = "none";
+    if (moderationPanel) moderationPanel.style.display = "none";
+    if (auditPanel) auditPanel.style.display = "none";
+    return;
+  }
+
+  if (accessMessage) {
+    accessMessage.style.display = "none";
+    accessMessage.textContent = "";
+  }
+
+  if (getCurrentUserRole() === USER_ROLES.SITE_ADMIN) {
+    if (assignmentPanel) assignmentPanel.style.display = "block";
+    if (moderationPanel) moderationPanel.style.display = "block";
+    if (userModerationSection) userModerationSection.style.display = "block";
+    if (auditPanel) auditPanel.style.display = "block";
+    return;
+  }
+
+  if (assignmentPanel) assignmentPanel.style.display = "none";
+  if (moderationPanel) moderationPanel.style.display = "block";
+  if (userModerationSection) userModerationSection.style.display = "none";
+  if (auditPanel) auditPanel.style.display = "none";
+}
+
+function renderAuditLogResults() {
+  const resultsContainer = document.getElementById("admin-audit-results");
+  if (!resultsContainer) {
+    return;
+  }
+
+  if (appState.admin.isLoadingAudit) {
+    resultsContainer.innerHTML = "<p>Loading audit log...</p>";
+    return;
+  }
+
+  if (!Array.isArray(appState.admin.auditEntries) || appState.admin.auditEntries.length === 0) {
+    resultsContainer.innerHTML = "<p>No audit log entries found for the current filter.</p>";
+    return;
+  }
+
+  resultsContainer.innerHTML = appState.admin.auditEntries.map((entry) => {
+    const eventType = escapeHtml(entry.eventType || "unknown");
+    const actorId = escapeHtml(entry.actorId || "unknown");
+    const targetId = escapeHtml(entry.targetId || "unknown");
+    const parkId = escapeHtml(entry.parkId || "-");
+    const timestamp = escapeHtml(formatDisplayDateTime(entry.timestamp));
+
+    return `
+      <article class="card audit-log-item">
+        <p><strong>${eventType}</strong></p>
+        <p>Actor: ${actorId}</p>
+        <p>Target: ${targetId}</p>
+        <p>Park: ${parkId}</p>
+        <p>Time: ${timestamp}</p>
+      </article>
+    `;
+  }).join("");
+}
+
+async function handleAssignParkAdminFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const parkId = (document.getElementById("admin-assignment-park-id")?.value || "").trim();
+    const targetUserId = (document.getElementById("admin-assignment-user-id")?.value || "").trim();
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await assignParkAdmin(parkId, targetUserId, appState.currentUser?.uid);
+    setAdminActionMessage("Park Admin assignment saved.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to assign Park Admin."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleRemoveParkAdminFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const parkId = (document.getElementById("admin-assignment-park-id")?.value || "").trim();
+    const targetUserId = (document.getElementById("admin-assignment-user-id")?.value || "").trim();
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await removeParkAdmin(parkId, targetUserId, appState.currentUser?.uid);
+    setAdminActionMessage("Park Admin assignment removed.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to remove Park Admin assignment."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleModerateReviewFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const reviewId = (document.getElementById("admin-review-id")?.value || "").trim();
+    const action = document.getElementById("admin-review-action")?.value || "hide";
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await moderateReview(reviewId, action, appState.currentUser?.uid);
+    setAdminActionMessage("Review moderation action saved.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to moderate review."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleModerateUserFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const targetUserId = (document.getElementById("admin-target-user-id")?.value || "").trim();
+    const action = document.getElementById("admin-user-action")?.value || "disable";
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await moderateUser(targetUserId, action, appState.currentUser?.uid);
+    setAdminActionMessage("User moderation action saved.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to moderate user."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleLoadAuditLogFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const parkId = (document.getElementById("admin-audit-park-id")?.value || "").trim();
+    const actorId = (document.getElementById("admin-audit-actor-id")?.value || "").trim();
+    const eventType = (document.getElementById("admin-audit-event-type")?.value || "").trim();
+
+    appState.admin.isLoadingAudit = true;
+    setAdminActionMessage(null);
+    renderAuditLogResults();
+
+    const filters = {
+      requestedByUserId: appState.currentUser?.uid,
+      limit: 50
+    };
+
+    if (parkId) filters.parkId = parkId;
+    if (actorId) filters.actorId = actorId;
+    if (eventType) filters.eventType = eventType;
+
+    appState.admin.auditEntries = await getAuditLog(filters);
+    renderAuditLogResults();
+  } catch (error) {
+    appState.admin.auditEntries = [];
+    renderAuditLogResults();
+    setAdminActionMessage(formatAppError(error, "Failed to load audit log."), true);
+  } finally {
+    appState.admin.isLoadingAudit = false;
+  }
+}
+
+function initializeAdminHandlers() {
+  const assignForm = document.getElementById("admin-assignment-form");
+  const removeButton = document.getElementById("admin-remove-assignment-btn");
+  const reviewForm = document.getElementById("admin-review-moderation-form");
+  const userForm = document.getElementById("admin-user-moderation-form");
+  const auditForm = document.getElementById("admin-audit-filter-form");
+
+  if (assignForm) {
+    assignForm.addEventListener("submit", handleAssignParkAdminFromForm);
+  }
+
+  if (removeButton) {
+    removeButton.addEventListener("click", async (event) => {
+      await handleRemoveParkAdminFromForm(event);
+    });
+  }
+
+  if (reviewForm) {
+    reviewForm.addEventListener("submit", handleModerateReviewFromForm);
+  }
+
+  if (userForm) {
+    userForm.addEventListener("submit", handleModerateUserFromForm);
+  }
+
+  if (auditForm) {
+    auditForm.addEventListener("submit", handleLoadAuditLogFromForm);
+  }
+}
+function renderSprint3Panels() {
+  renderNotificationPanel();
+  renderSafetyReportPanel();
+  renderEquipmentPanel();
+  renderCrowdHistoryPanel();
+  renderMapPanel();
+
+  if (appState.currentView === "admin") {
+    renderAdminPanels();
+  }
+}
+
+function toggleNotificationPanel() {
+  appState.notificationsPanelOpen = !appState.notificationsPanelOpen;
+  renderNotificationPanel();
+}
+
+async function markNotificationReadHandler(notificationId) {
+  if (!notificationId || !appState.currentUser?.uid) {
+    return;
+  }
+
+  try {
+    await markNotificationRead(notificationId);
+    appState.notifications = appState.notifications.map((notification) => {
+      if (notification.id !== notificationId) {
+        return notification;
+      }
+
+      return {
+        ...notification,
+        isRead: true
+      };
+    });
+
+    normalizeNotificationList(appState.notifications);
+    renderNotificationPanel();
+  } catch (error) {
+    appState.notificationsError = formatAppError(error, "Unable to mark notification as read.");
+    renderNotificationPanel();
+  }
+}
+
+function updateSafetyReportDescription(value) {
+  appState.safetyReportDescription = String(value || "");
+}
+
+function updateSafetyReportType(value) {
+  appState.safetyReportType = String(value || "hazard");
+}
+
+async function updateSafetyReportFilter(value) {
+  appState.safetyReportStatusFilter = String(value || "");
+  await loadSafetyReportsForSelectedPark();
+  renderSafetyReportPanel();
+}
+
+async function submitSafetyReportHandler() {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to submit a safety report.");
+    }
+
+    if (!appState.selectedPark?.id) {
+      throw new Error("Select a park before submitting a safety report.");
+    }
+
+    const description = appState.safetyReportDescription.trim();
+    if (!description) {
+      throw new Error("Safety report description is required.");
+    }
+
+    appState.safetyReportSubmitting = true;
+    appState.safetyReportError = null;
+    appState.safetyReportSuccess = null;
+    renderSafetyReportPanel();
+
+    await createSafetyReport(appState.selectedPark.id, appState.currentUser.uid, {
+      type: appState.safetyReportType,
+      description
+    });
+
+    appState.safetyReportDescription = "";
+    appState.safetyReportType = "hazard";
+    appState.safetyReportSubmitting = false;
+    appState.safetyReportSuccess = "Safety report submitted.";
+
+    await loadSafetyReportsForSelectedPark();
+    renderSafetyReportPanel();
+  } catch (error) {
+    appState.safetyReportSubmitting = false;
+    appState.safetyReportError = formatAppError(error, "Failed to submit safety report.");
+    renderSafetyReportPanel();
+  }
+}
+
+async function transitionSafetyReport(reportId, targetStatus) {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to update safety reports.");
+    }
+
+    if (!appState.selectedPark?.id && !appState.adminSelectedParkId) {
+      throw new Error("Select a park before changing report status.");
+    }
+
+    await updateSafetyReportStatus(
+      reportId,
+      targetStatus,
+      appState.currentUser.uid,
+      getCurrentUserRole()
+    );
+
+    await loadSafetyReportsForSelectedPark();
+    renderSafetyReportPanel();
+    renderAdminPanels();
+  } catch (error) {
+    appState.safetyReportError = formatAppError(error, "Unable to update safety report status.");
+    appState.adminPanelError = appState.safetyReportError;
+    renderSafetyReportPanel();
+    renderAdminPanels();
+  }
+}
+
+async function deleteSafetyReportHandler(reportId) {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to delete safety reports.");
+    }
+
+    if (!window.confirm("Delete this safety report? This action cannot be undone.")) {
+      return;
+    }
+
+    await deleteSafetyReport(reportId, appState.currentUser.uid, getCurrentUserRole());
+    appState.safetyReportSuccess = "Safety report deleted.";
+    appState.safetyReportError = null;
+    await loadSafetyReportsForSelectedPark();
+    renderSafetyReportPanel();
+    renderAdminPanels();
+  } catch (error) {
+    appState.safetyReportError = formatAppError(error, "Unable to delete safety report.");
+    appState.adminPanelError = appState.safetyReportError;
+    renderSafetyReportPanel();
+    renderAdminPanels();
+  }
+}
+
+function updateEquipmentName(value) {
+  appState.equipmentNameInput = String(value || "");
+}
+
+function updateEquipmentType(value) {
+  appState.equipmentTypeInput = String(value || "playground");
+}
+
+async function submitEquipmentHandler() {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to create an equipment record.");
+    }
+
+    if (!appState.selectedPark?.id) {
+      throw new Error("Select a park before adding equipment.");
+    }
+
+    if (!appState.equipmentNameInput.trim()) {
+      throw new Error("Equipment name is required.");
+    }
+
+    appState.equipmentSubmitting = true;
+    appState.equipmentError = null;
+    appState.equipmentSuccess = null;
+    renderEquipmentPanel();
+
+    await createEquipment(appState.selectedPark.id, {
+      name: appState.equipmentNameInput.trim(),
+      type: appState.equipmentTypeInput,
+      status: EQUIPMENT_STATUSES.OPERATIONAL
+    });
+
+    appState.equipmentNameInput = "";
+    appState.equipmentTypeInput = "playground";
+    appState.equipmentSubmitting = false;
+    appState.equipmentSuccess = "Equipment record added.";
+
+    await loadEquipmentForSelectedPark();
+    renderEquipmentPanel();
+  } catch (error) {
+    appState.equipmentSubmitting = false;
+    appState.equipmentError = formatAppError(error, "Unable to add equipment.");
+    renderEquipmentPanel();
+  }
+}
+
+async function transitionEquipmentStatus(equipmentId, status) {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to update equipment status.");
+    }
+
+    if (!appState.selectedPark?.id && !appState.adminSelectedParkId) {
+      throw new Error("Select a park before changing equipment status.");
+    }
+
+    await updateEquipmentStatus(
+      equipmentId,
+      status,
+      appState.currentUser.uid,
+      getCurrentUserRole()
+    );
+
+    await loadEquipmentForSelectedPark();
+    renderEquipmentPanel();
+    renderAdminPanels();
+  } catch (error) {
+    appState.equipmentError = formatAppError(error, "Unable to update equipment status.");
+    appState.adminPanelError = appState.equipmentError;
+    renderEquipmentPanel();
+    renderAdminPanels();
+  }
+}
+
+async function deleteEquipmentHandler(equipmentId) {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to delete equipment.");
+    }
+
+    if (!window.confirm("Delete this equipment record? This action cannot be undone.")) {
+      return;
+    }
+
+    await deleteEquipment(equipmentId, appState.currentUser.uid, getCurrentUserRole());
+    appState.equipmentSuccess = "Equipment record deleted.";
+    appState.equipmentError = null;
+    await loadEquipmentForSelectedPark();
+    renderEquipmentPanel();
+    renderAdminPanels();
+  } catch (error) {
+    appState.equipmentError = formatAppError(error, "Unable to delete equipment.");
+    appState.adminPanelError = appState.equipmentError;
+    renderEquipmentPanel();
+    renderAdminPanels();
+  }
+}
+
+function toggleMapView() {
+  appState.mapMode = !appState.mapMode;
+  renderMapPanel();
+}
+
+async function selectAdminPark(parkId) {
+  appState.adminSelectedParkId = parkId;
+  appState.selectedPark = parkId ? await loadCrowdReportStateForPark(parkId) : null;
+  await loadSprint3DetailData();
+  renderAdminPanels();
+}
 async function loadUserRole(uid) {
   try {
     const users = await readRecords("users", { uid: uid });
@@ -446,6 +1737,11 @@ function applyRouteAccessRules(firebaseUser) {
     return true;
   }
 
+  if (appState.currentView === "admin" && firebaseUser && !canAccessAdminView()) {
+    window.location.replace("./dashboard.html");
+    return true;
+  }
+
   if (redirectIfAuthenticatedOnLoginView(appState.currentView, firebaseUser)) {
     return true;
   }
@@ -465,7 +1761,15 @@ async function handleAuthStateChanged(firebaseUser) {
   // Phase 2: Load user role from Firestore when user logs in
   if (firebaseUser) {
     await loadUserRole(firebaseUser.uid);
+    if (canManageSafetyReports() || canManageEquipment()) {
+      await startNotificationsSubscription();
+    } else {
+      stopNotificationsSubscription();
+      normalizeNotificationList([]);
+    }
   } else {
+    stopNotificationsSubscription();
+    normalizeNotificationList([]);
     appState.userRole = null;
   }
 
@@ -482,6 +1786,22 @@ async function handleAuthStateChanged(firebaseUser) {
     renderParkForm();
     updateDashboardManagementControls();
     renderCrowdReportPanel();
+    renderSprint3Panels();
+  }
+
+  if (appState.currentView === "admin") {
+    await loadAdminParkOptions();
+    if (appState.adminSelectedParkId) {
+      appState.selectedPark = await loadCrowdReportStateForPark(appState.adminSelectedParkId);
+      await loadSprint3DetailData();
+    }
+    renderAdminPanels();
+    renderNotificationPanel();
+  }
+
+  if (appState.currentView === "admin") {
+    renderAdminRoleVisibility();
+    renderAuditLogResults();
   }
 
   if (appState.currentView === "profile") {
@@ -569,6 +1889,7 @@ async function executeSearchAndFilter() {
       appState.parkResults = [];
       appState.isLoadingParks = false;
       renderParkResults();
+      renderMapPanel();
       return;
     }
 
@@ -581,11 +1902,13 @@ async function executeSearchAndFilter() {
     appState.parkQuery.hasMore = response.hasMore;
     appState.isLoadingParks = false;
     renderParkResults();
+    renderMapPanel();
   } catch (error) {
     console.error("Search and filter error:", error);
     appState.isLoadingParks = false;
     appState.parksError = error.message;
     renderParkResults();
+    renderMapPanel();
   }
 }
 
@@ -600,11 +1923,16 @@ async function selectParkForDetail(parkId) {
     appState.crowdReportError = null;
     appState.crowdReportSuccess = null;
     clearCommunityFeedback();
+    appState.adminPanelError = null;
+    await loadSprint3DetailData();
     await loadCommunityFeaturesForSelectedPark();
     syncParkResultsWithSelectedPark(appState.selectedPark);
     renderParkResults();
     renderParkDetail();
     renderCrowdReportPanel();
+    renderSafetyReportPanel();
+    renderEquipmentPanel();
+    renderCrowdHistoryPanel();
   } catch (error) {
     console.error("Failed to load park detail:", error);
     appState.parksError = formatAppError(error, "Failed to load park detail.");
@@ -619,24 +1947,42 @@ function clearParkDetail() {
   appState.selectedPark = null;
   appState.reviews = [];
   appState.favoriteParks = [];
+  appState.safetyReports = [];
+  appState.equipmentItems = [];
+  appState.crowdHistory = [];
   clearCrowdReportState();
   clearCommunityFeedback();
   renderParkDetail();
   renderCrowdReportPanel();
+  renderSafetyReportPanel();
+  renderEquipmentPanel();
+  renderCrowdHistoryPanel();
 }
 
 function updateDashboardManagementControls() {
   const createButton = document.getElementById("create-park-btn");
-  if (!createButton) {
+  const mapToggleButton = document.getElementById("toggle-map-view-btn");
+  const adminNavLink = document.getElementById("nav-admin-link");
+
+  if (!createButton && !mapToggleButton && !adminNavLink) {
     return;
   }
 
-  if (canCreateParkRecord()) {
+  if (createButton && canCreateParkRecord()) {
     createButton.style.display = "inline-flex";
     createButton.disabled = false;
-  } else {
+  } else if (createButton) {
     createButton.style.display = "none";
     createButton.disabled = true;
+  }
+
+  if (mapToggleButton) {
+    mapToggleButton.style.display = isAuthenticated() ? "inline-flex" : "none";
+  }
+
+  if (adminNavLink) {
+    const canSeeAdmin = canManageSafetyReports() || canManageEquipment();
+    adminNavLink.style.display = canSeeAdmin ? "inline-flex" : "none";
   }
 }
 
@@ -718,6 +2064,7 @@ async function loadMoreParkResults() {
   } finally {
     appState.isLoadingParks = false;
     renderParkResults();
+    renderMapPanel();
   }
 }
 
@@ -1041,7 +2388,7 @@ function renderParkForm() {
 }
 
 function initializeViewController() {
-  if (appState.currentView === "login" || appState.currentView === "profile") {
+  if (appState.currentView === "login" || appState.currentView === "profile" || appState.currentView === "admin") {
     initializeAuthController();
   }
 
@@ -1050,6 +2397,24 @@ function initializeViewController() {
     initializeParkSearchAndFilter();
     applyInitialDashboardSearchFromUrl();
     renderCrowdReportPanel();
+    renderSafetyReportPanel();
+    renderEquipmentPanel();
+    renderCrowdHistoryPanel();
+    renderMapPanel();
+  }
+
+  if (appState.currentView === "admin") {
+    const notificationToggleButton = document.getElementById("admin-notifications-toggle-btn");
+    if (notificationToggleButton) {
+      notificationToggleButton.addEventListener("click", toggleNotificationPanel);
+    }
+
+    renderAdminPanels();
+    renderNotificationPanel();
+  }
+
+  if (appState.currentView === "admin") {
+    initializeAdminHandlers();
   }
 }
 
@@ -1368,6 +2733,12 @@ function initializeParkSearchAndFilter() {
   if (createParkButton) {
     createParkButton.addEventListener("click", openCreateParkForm);
   }
+
+  const mapToggleButton = document.getElementById("toggle-map-view-btn");
+  if (mapToggleButton) {
+    mapToggleButton.addEventListener("click", toggleMapView);
+  }
+
 }
 
 function initializeApp() {
@@ -1403,7 +2774,22 @@ function initializeApp() {
       updateReviewBody,
       submitReview,
       submitPhoto,
-      toggleFavorite
+      toggleFavorite,
+      toggleNotificationPanel,
+      markNotificationRead: markNotificationReadHandler,
+      updateSafetyReportDescription,
+      updateSafetyReportType,
+      updateSafetyReportFilter,
+      submitSafetyReport: submitSafetyReportHandler,
+      transitionSafetyReport,
+      deleteSafetyReport: deleteSafetyReportHandler,
+      updateEquipmentName,
+      updateEquipmentType,
+      submitEquipment: submitEquipmentHandler,
+      transitionEquipmentStatus,
+      deleteEquipment: deleteEquipmentHandler,
+      toggleMapView,
+      selectAdminPark
     };
     
     return appState;

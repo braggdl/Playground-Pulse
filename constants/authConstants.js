@@ -83,6 +83,8 @@ function getFriendlyAuthMessage(error, fallbackMessage = "Authentication request
 const PARK_ROLE_RULES = {
   safetyReportTransition: ["Park Admin", "Site Admin"],
   equipmentStatusChange: ["Park Admin", "Site Admin"],
+  safetyReportDelete: ["Site Admin"],
+  equipmentDelete: ["Park Admin", "Site Admin"],
   assignParkAdmin: ["Site Admin"],
   removeParkAdmin: ["Site Admin"],
   moderateContent: ["Park Admin", "Site Admin"],

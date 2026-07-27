@@ -23,6 +23,9 @@
 import { SAFETY_REPORT_STATUSES } from "../constants/reportConstants.js";
 
 const SAFETY_REPORT_TYPES = {
+  HAZARD: "hazard",
+  INJURY: "injury",
+  CONCERN: "concern",
   SAFETY: "safety",
   MAINTENANCE: "maintenance"
 };
@@ -35,13 +38,13 @@ function isValidReportType(type) {
 
 function createSafetyReportModel(partialReport = {}) {
   const now = new Date().toISOString();
-  const type = partialReport.type || SAFETY_REPORT_TYPES.SAFETY;
+  const type = partialReport.type || SAFETY_REPORT_TYPES.HAZARD;
 
   return {
     id: partialReport.id || "",
     parkId: partialReport.parkId || "",
     userId: partialReport.userId || "",
-    type: isValidReportType(type) ? type : SAFETY_REPORT_TYPES.SAFETY,
+    type: isValidReportType(type) ? type : SAFETY_REPORT_TYPES.HAZARD,
     description: partialReport.description || "",
     status: partialReport.status || SAFETY_REPORT_STATUSES.OPEN,
     createdAt: partialReport.createdAt || now,
