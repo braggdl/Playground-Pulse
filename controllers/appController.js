@@ -17,18 +17,24 @@ import {
 } from "../constants/reportConstants.js";
 import {
   calculateBusyLevelFromReports,
+  addFavorite,
+  createReview,
   createEquipment,
   createSafetyReport,
   deleteEquipment,
   deleteSafetyReport,
   getCrowdHistory,
   getEquipment,
+  getFavorites,
   getSafetyReports,
   getUserNotifications,
   getParkById,
   getRecentCrowdReportsForPark,
+  getReviews,
   markNotificationRead,
-  submitCrowdReport
+  removeFavorite,
+  submitCrowdReport,
+  submitParkPhoto
 } from "../services/databaseService.js";
 import { subscribeToUserNotifications } from "../services/notificationService.js";
 import {
@@ -89,6 +95,21 @@ const appState = {
   parkFormError: null,
   parkFormSuccess: null,
   isSubmittingParkForm: false,
+  // Sprint 3: community features state.
+  reviewForm: {
+    rating: 5,
+    body: ""
+  },
+  reviewSubmitting: false,
+  reviewError: null,
+  reviewSuccess: null,
+  reviews: [],
+  favoriteParks: [],
+  favoriteLoading: false,
+  favoriteError: null,
+  photoSubmitting: false,
+  photoError: null,
+  photoSuccess: null,
   // Sprint 3 Workstream 1: safety, equipment, notifications.
   safetyReportDescription: "",
   safetyReportType: "hazard",
@@ -471,6 +492,13 @@ function clearCrowdReportState() {
   appState.crowdReportLevel = "1";
   appState.latestBusyLevel = null;
   appState.lastCrowdReportWindowKey = null;
+}
+
+function clearCommunityFeedback() {
+  appState.reviewError = null;
+  appState.reviewSuccess = null;
+  appState.photoError = null;
+  appState.photoSuccess = null;
 }
 
 function updateCrowdReportLevel(level) {
@@ -1775,6 +1803,10 @@ async function handleAuthStateChanged(firebaseUser) {
     renderAdminRoleVisibility();
     renderAuditLogResults();
   }
+
+  if (appState.currentView === "profile") {
+    renderProfileFavorites();
+  }
 }
 
 // ============================================================
@@ -1890,8 +1922,10 @@ async function selectParkForDetail(parkId) {
     appState.parkFormSuccess = null;
     appState.crowdReportError = null;
     appState.crowdReportSuccess = null;
+    clearCommunityFeedback();
     appState.adminPanelError = null;
     await loadSprint3DetailData();
+    await loadCommunityFeaturesForSelectedPark();
     syncParkResultsWithSelectedPark(appState.selectedPark);
     renderParkResults();
     renderParkDetail();
@@ -1911,10 +1945,13 @@ async function selectParkForDetail(parkId) {
  */
 function clearParkDetail() {
   appState.selectedPark = null;
+  appState.reviews = [];
+  appState.favoriteParks = [];
   appState.safetyReports = [];
   appState.equipmentItems = [];
   appState.crowdHistory = [];
   clearCrowdReportState();
+  clearCommunityFeedback();
   renderParkDetail();
   renderCrowdReportPanel();
   renderSafetyReportPanel();
@@ -2209,6 +2246,12 @@ function renderParkDetail() {
 
   const park = appState.selectedPark;
   const canEdit = canEditParkRecord();
+  const favoriteIsActive = appState.favoriteParks.some((favorite) => favorite.parkId === park.id);
+  const reviewCount = appState.reviews.length;
+  const avgRating = park.reviewAggregate?.averageRating != null ? Number(park.reviewAggregate.averageRating).toFixed(1) : "No ratings yet";
+  const photoGallery = Array.isArray(park.photos) && park.photos.length > 0
+    ? `<div class="photo-gallery">${park.photos.map((photo) => `<img src="${escapeHtml(photo)}" alt="Park photo" />`).join("")}</div>`
+    : `<p class="muted">No photos uploaded yet.</p>`;
 
   detailContainer.innerHTML = `
     <div class="park-detail">
@@ -2242,6 +2285,16 @@ function renderParkDetail() {
           <li>Restrooms: ${park.restrooms ? '✓ Yes' : '✗ No'}</li>
           <li>Shade Available: ${park.shadeAvailable ? '✓ Yes' : '✗ No'}</li>
         </ul>
+      </section>
+
+      <section class="detail-section card">
+        <div class="detail-section-header">
+          <h3>Community</h3>
+          ${isAuthenticated() ? `<button class="favorites-toggle ${favoriteIsActive ? "active" : ""}" onclick="window.appControllerExports.toggleFavorite('${park.id}')" title="Save this park">♡</button>` : ""}
+        </div>
+        <p class="muted">Average rating: ${escapeHtml(avgRating)} • ${reviewCount} review(s)</p>
+        ${renderReviewSection(park)}
+        ${renderPhotoSection(park)}
       </section>
       
       ${canEdit ? `
@@ -2362,6 +2415,235 @@ function initializeViewController() {
 
   if (appState.currentView === "admin") {
     initializeAdminHandlers();
+  }
+}
+
+async function renderProfileFavorites() {
+  const favoritesContainer = document.getElementById("profile-favorites-container");
+  if (!favoritesContainer) {
+    return;
+  }
+
+  if (!isAuthenticated()) {
+    favoritesContainer.innerHTML = '<p class="muted">Sign in to see your saved parks.</p>';
+    return;
+  }
+
+  try {
+    appState.favoriteLoading = true;
+    favoritesContainer.innerHTML = '<p class="muted">Loading favorites...</p>';
+    const favorites = await getFavorites(appState.currentUser.uid);
+    appState.favoriteParks = favorites;
+
+    if (!favorites.length) {
+      favoritesContainer.innerHTML = '<p class="muted">No saved favorites yet.</p>';
+      return;
+    }
+
+    favoritesContainer.innerHTML = `
+      <ul class="review-list">
+        ${favorites.map((favorite) => `<li class="review-item"><strong>${escapeHtml(favorite.parkId || "Park")}</strong><p class="muted">Saved on ${escapeHtml(formatDisplayDateTime(favorite.createdAt))}</p></li>`).join("")}
+      </ul>
+    `;
+  } catch (error) {
+    favoritesContainer.innerHTML = `<p class="crowd-report-error">${escapeHtml(formatAppError(error, "Unable to load favorites."))}</p>`;
+  } finally {
+    appState.favoriteLoading = false;
+  }
+}
+
+async function loadCommunityFeaturesForSelectedPark() {
+  if (!appState.selectedPark?.id) {
+    return;
+  }
+
+  try {
+    appState.reviews = await getReviews(appState.selectedPark.id);
+    if (isAuthenticated()) {
+      appState.favoriteLoading = true;
+      appState.favoriteParks = await getFavorites(appState.currentUser.uid);
+      appState.favoriteLoading = false;
+    }
+  } catch (error) {
+    appState.reviewError = formatAppError(error, "Unable to load community features.");
+  }
+}
+
+function renderReviewSection(park) {
+  if (!isAuthenticated()) {
+    return `
+      <div class="review-section">
+        <h4>Reviews</h4>
+        <p class="muted">Sign in to leave a review.</p>
+        ${renderReviewList()}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="review-section">
+      <h4>Reviews</h4>
+      ${appState.reviewError ? `<p class="crowd-report-error">${escapeHtml(appState.reviewError)}</p>` : ""}
+      ${appState.reviewSuccess ? `<p class="crowd-report-success">${escapeHtml(appState.reviewSuccess)}</p>` : ""}
+      <form class="review-form" onsubmit="event.preventDefault(); window.appControllerExports.submitReview('${park.id}');">
+        <div class="form-group">
+          <label for="review-rating">Rating</label>
+          <select id="review-rating" onchange="window.appControllerExports.updateReviewRating(this.value)">
+            <option value="5" ${appState.reviewForm.rating === 5 ? "selected" : ""}>5 Stars</option>
+            <option value="4" ${appState.reviewForm.rating === 4 ? "selected" : ""}>4 Stars</option>
+            <option value="3" ${appState.reviewForm.rating === 3 ? "selected" : ""}>3 Stars</option>
+            <option value="2" ${appState.reviewForm.rating === 2 ? "selected" : ""}>2 Stars</option>
+            <option value="1" ${appState.reviewForm.rating === 1 ? "selected" : ""}>1 Star</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="review-body">Comments</label>
+          <textarea id="review-body" rows="3" placeholder="Share your experience..." oninput="window.appControllerExports.updateReviewBody(this.value)">${escapeHtml(appState.reviewForm.body || "")}</textarea>
+        </div>
+        <button class="btn btn-primary" type="submit" ${appState.reviewSubmitting ? "disabled" : ""}>${appState.reviewSubmitting ? "Submitting..." : "Submit Review"}</button>
+      </form>
+      ${renderReviewList()}
+    </div>
+  `;
+}
+
+function renderReviewList() {
+  if (!appState.reviews.length) {
+    return '<p class="muted">No reviews yet.</p>';
+  }
+
+  return `<ul class="review-list">${appState.reviews.map((review) => `
+    <li class="review-item">
+      <strong>${escapeHtml(review.userId || "Guest")}</strong>
+      <span class="badge badge-open">${escapeHtml(String(review.rating || 0))}★</span>
+      <p>${escapeHtml(review.body || "")}</p>
+    </li>
+  `).join("")}</ul>`;
+}
+
+function renderPhotoSection(park) {
+  return `
+    <div class="photo-upload-area">
+      <h4>Photos</h4>
+      ${appState.photoError ? `<p class="crowd-report-error">${escapeHtml(appState.photoError)}</p>` : ""}
+      ${appState.photoSuccess ? `<p class="crowd-report-success">${escapeHtml(appState.photoSuccess)}</p>` : ""}
+      ${isAuthenticated() ? `
+        <form class="photo-form" onsubmit="event.preventDefault(); window.appControllerExports.submitPhoto('${park.id}');">
+          <div class="form-group">
+            <label for="park-photo-input">Upload a photo</label>
+            <input id="park-photo-input" type="file" accept="image/jpeg,image/png,image/webp" />
+          </div>
+          <button class="btn btn-secondary" type="submit" ${appState.photoSubmitting ? "disabled" : ""}>${appState.photoSubmitting ? "Uploading..." : "Upload Photo"}</button>
+        </form>
+      ` : '<p class="muted">Sign in to upload a photo.</p>'}
+      ${Array.isArray(park.photos) && park.photos.length > 0 ? `<div class="photo-gallery">${park.photos.map((photo) => `<img src="${escapeHtml(photo)}" alt="Park photo" />`).join("")}</div>` : '<p class="muted">No photos uploaded yet.</p>'}
+    </div>
+  `;
+}
+
+function updateReviewRating(value) {
+  appState.reviewForm.rating = Number(value || 5);
+  appState.reviewError = null;
+  appState.reviewSuccess = null;
+}
+
+function updateReviewBody(value) {
+  appState.reviewForm.body = value || "";
+  appState.reviewError = null;
+  appState.reviewSuccess = null;
+}
+
+async function submitReview(parkId) {
+  try {
+    if (!isAuthenticated()) {
+      throw new Error("Please sign in to submit a review.");
+    }
+
+    appState.reviewSubmitting = true;
+    appState.reviewError = null;
+    appState.reviewSuccess = null;
+    renderParkDetail();
+
+    const createdReview = await createReview(parkId, appState.currentUser.uid, {
+      rating: appState.reviewForm.rating,
+      body: appState.reviewForm.body
+    });
+
+    appState.reviewSuccess = "Review submitted successfully.";
+    appState.reviewForm = { rating: 5, body: "" };
+    appState.reviews = [createdReview, ...appState.reviews];
+    appState.selectedPark = {
+      ...appState.selectedPark,
+      reviewAggregate: {
+        averageRating: appState.selectedPark.reviewAggregate?.averageRating ?? null,
+        reviewCount: appState.selectedPark.reviewAggregate?.reviewCount ?? 0
+      }
+    };
+    appState.reviewSubmitting = false;
+    renderParkDetail();
+  } catch (error) {
+    appState.reviewSubmitting = false;
+    appState.reviewError = formatAppError(error, "Unable to submit review.");
+    renderParkDetail();
+  }
+}
+
+async function submitPhoto(parkId) {
+  try {
+    const fileInput = document.getElementById("park-photo-input");
+    const file = fileInput?.files?.[0];
+
+    if (!file) {
+      throw new Error("Select a photo before uploading.");
+    }
+
+    appState.photoSubmitting = true;
+    appState.photoError = null;
+    appState.photoSuccess = null;
+    renderParkDetail();
+
+    const result = await submitParkPhoto(parkId, appState.currentUser.uid, file);
+    appState.photoSuccess = "Photo uploaded successfully.";
+    appState.selectedPark = {
+      ...appState.selectedPark,
+      photos: result.photos || []
+    };
+    appState.photoSubmitting = false;
+    renderParkDetail();
+  } catch (error) {
+    appState.photoSubmitting = false;
+    appState.photoError = formatAppError(error, "Unable to upload photo.");
+    renderParkDetail();
+  }
+}
+
+async function toggleFavorite(parkId) {
+  try {
+    if (!isAuthenticated()) {
+      throw new Error("Please sign in to save favorites.");
+    }
+
+    appState.favoriteLoading = true;
+    appState.favoriteError = null;
+    renderParkDetail();
+
+    const favoriteExists = appState.favoriteParks.some((favorite) => favorite.parkId === parkId);
+    if (favoriteExists) {
+      await removeFavorite(appState.currentUser.uid, parkId);
+      appState.favoriteParks = appState.favoriteParks.filter((favorite) => favorite.parkId !== parkId);
+    } else {
+      const response = await addFavorite(appState.currentUser.uid, parkId);
+      if (response.added) {
+        appState.favoriteParks = [...appState.favoriteParks, response.favorite];
+      }
+    }
+
+    appState.favoriteLoading = false;
+    renderParkDetail();
+  } catch (error) {
+    appState.favoriteLoading = false;
+    appState.favoriteError = formatAppError(error, "Unable to update favorites.");
+    renderParkDetail();
   }
 }
 
@@ -2488,6 +2770,11 @@ function initializeApp() {
       updateCrowdReportLevel,
       submitCrowdReportFromSelection,
       clearCrowdReportSelection,
+      updateReviewRating,
+      updateReviewBody,
+      submitReview,
+      submitPhoto,
+      toggleFavorite,
       toggleNotificationPanel,
       markNotificationRead: markNotificationReadHandler,
       updateSafetyReportDescription,

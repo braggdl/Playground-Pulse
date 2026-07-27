@@ -27,7 +27,7 @@
       <h2>User Profile</h2>
 
       <div class="profile-field">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <div class="profile-header-row">
           <label>Display Name:</label>
           <button type="button" id="edit-display-name-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Edit</button>
         </div>
@@ -91,6 +91,13 @@
           <button type="button" id="update-password-btn" class="btn btn-primary">Update Password</button>
           <button type="button" id="cancel-password-btn" class="btn btn-secondary">Cancel</button>
         </div>
+      </div>
+    </section>
+
+    <section class="profile-card profile-section">
+      <h3>Saved Favorites</h3>
+      <div id="profile-favorites-container" class="profile-favorites-container">
+        <p class="muted">Loading favorites...</p>
       </div>
     </section>
   </main>
