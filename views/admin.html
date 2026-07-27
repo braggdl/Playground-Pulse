@@ -3,11 +3,39 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Playground Pulse - Admin</title>
+  <title>Playground Pulse - Administration</title>
   <link rel="stylesheet" href="../styles/main.css" />
   <style>
     body.protected-pending {
       visibility: hidden;
+    }
+
+    .admin-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+    }
+
+    .admin-panel-title {
+      margin-top: 0;
+      margin-bottom: 0.75rem;
+    }
+
+    .audit-log-item p {
+      margin: 0.25rem 0;
+    }
+
+    .admin-audit-results {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 1rem;
     }
   </style>
 </head>
@@ -22,38 +50,116 @@
     </nav>
   </header>
 
-  <main class="dashboard-container">
-    <div class="user-info-section">
-      <h2>Admin Workspace</h2>
-      <p>User: <span id="admin-user-display">Loading...</span></p>
-      <p>Role: <span id="admin-user-role" class="role-badge">Loading...</span></p>
-    </div>
+  <main class="admin-container">
+    <section class="card">
+      <h2 class="admin-panel-title">Admin Console</h2>
+      <p>User: <strong id="admin-current-user">Loading...</strong></p>
+      <p>Role: <span id="admin-role-value" class="role-badge">Loading...</span></p>
+      <p id="admin-access-message" style="display: none;"></p>
+      <p id="admin-action-message" style="display: none;"></p>
+    </section>
 
-    <section class="dashboard-content admin-workspace">
-      <section class="card admin-panel admin-notifications-section">
-        <button id="admin-notifications-toggle-btn" type="button" class="btn btn-secondary notification-toggle" style="display: none;">
-          Notifications
-          <span id="admin-notification-unread-count" class="badge badge-unread" style="display: none;">0</span>
-        </button>
-        <div id="notification-panel-container" class="notification-panel-container"></div>
-      </section>
+    <section class="card admin-panel admin-notifications-section">
+      <button id="admin-notifications-toggle-btn" type="button" class="btn btn-secondary notification-toggle" style="display: none;">
+        Notifications
+        <span id="admin-notification-unread-count" class="badge badge-unread" style="display: none;">0</span>
+      </button>
+      <div id="notification-panel-container" class="notification-panel-container"></div>
+    </section>
 
+    <section class="admin-grid">
+      <article id="admin-assignment-panel" class="card admin-panel" style="display: none;">
+        <h3 class="admin-panel-title">Assign Park Admins</h3>
+        <form id="admin-assignment-form">
+          <div class="form-group">
+            <label for="admin-assignment-park-id">Park ID</label>
+            <input id="admin-assignment-park-id" type="text" placeholder="park-test-001" required />
+          </div>
+          <div class="form-group">
+            <label for="admin-assignment-user-id">Target User ID</label>
+            <input id="admin-assignment-user-id" type="text" placeholder="user-parkadmin-001" required />
+          </div>
+          <div class="park-form-actions">
+            <button type="submit" class="btn btn-primary">Assign</button>
+            <button type="button" id="admin-remove-assignment-btn" class="btn btn-secondary">Remove</button>
+          </div>
+        </form>
+      </article>
+
+      <article id="admin-moderation-panel" class="card moderation-panel" style="display: none;">
+        <h3 class="admin-panel-title">Moderate Content</h3>
+        <form id="admin-review-moderation-form">
+          <div class="form-group">
+            <label for="admin-review-id">Review ID</label>
+            <input id="admin-review-id" type="text" placeholder="review-id" required />
+          </div>
+          <div class="form-group">
+            <label for="admin-review-action">Action</label>
+            <select id="admin-review-action">
+              <option value="hide">Hide</option>
+              <option value="reinstate">Reinstate</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">Save Review Action</button>
+        </form>
+
+        <section id="admin-user-moderation-section" style="margin-top: 1rem; display: none;">
+          <h4 style="margin-bottom: 0.75rem;">Moderate Users (Site Admin)</h4>
+          <form id="admin-user-moderation-form">
+            <div class="form-group">
+              <label for="admin-target-user-id">Target User ID</label>
+              <input id="admin-target-user-id" type="text" placeholder="user-parent-001" required />
+            </div>
+            <div class="form-group">
+              <label for="admin-user-action">Action</label>
+              <select id="admin-user-action">
+                <option value="disable">Disable</option>
+                <option value="reinstate">Reinstate</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Save User Action</button>
+          </form>
+        </section>
+      </article>
+
+      <article id="admin-audit-panel" class="card audit-log-panel" style="display: none;">
+        <h3 class="admin-panel-title">Audit Log</h3>
+        <form id="admin-audit-filter-form">
+          <div class="form-group">
+            <label for="admin-audit-park-id">Filter by Park ID</label>
+            <input id="admin-audit-park-id" type="text" placeholder="park-test-001" />
+          </div>
+          <div class="form-group">
+            <label for="admin-audit-actor-id">Filter by Actor ID</label>
+            <input id="admin-audit-actor-id" type="text" placeholder="user-siteadmin-001" />
+          </div>
+          <div class="form-group">
+            <label for="admin-audit-event-type">Filter by Event Type</label>
+            <select id="admin-audit-event-type">
+              <option value="">Select event type</option>
+              <option value="admin_assigned">admin_assigned</option>
+              <option value="admin_removed">admin_removed</option>
+              <option value="content_moderated">content_moderated</option>
+              <option value="user_moderated">user_moderated</option>
+              <option value="safety_status_changed">safety_status_changed</option>
+              <option value="equipment_status_changed">equipment_status_changed</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">Load Audit Log</button>
+        </form>
+
+        <div id="admin-audit-results" class="admin-audit-results"></div>
+      </article>
+    </section>
+
+    <section class="card admin-panel">
       <h2>Safety and Maintenance Management</h2>
-      <p class="admin-note">This view implements Sprint 3 Workstream 1 management surfaces for safety reports and equipment status only.</p>
-
+      <p class="admin-note">This view includes Workstream 1 management surfaces for safety reports and equipment status.</p>
       <div id="admin-workstream1-container" class="admin-panel-grid">
-        <section id="admin-safety-panel" class="card admin-panel">
-          <!-- Safety report management rendered by appController -->
-        </section>
-
-        <section id="admin-equipment-panel" class="card admin-panel">
-          <!-- Equipment management rendered by appController -->
-        </section>
+        <section id="admin-safety-panel" class="card admin-panel"></section>
+        <section id="admin-equipment-panel" class="card admin-panel"></section>
       </div>
-
-      <section id="admin-workstream1-status" class="card admin-panel">
-        <!-- Status and permission messages rendered by appController -->
-      </section>
+      <section id="admin-workstream1-status" class="card admin-panel"></section>
     </section>
   </main>
 
@@ -63,32 +169,22 @@
 
     initializeApp();
 
-    const roleElement = document.getElementById("admin-user-role");
-    const userElement = document.getElementById("admin-user-display");
-
-    const checkAuthReady = setInterval(() => {
-      if (!appState.authReady) {
-        return;
-      }
-
-      clearInterval(checkAuthReady);
-
-      const currentUser = appState.currentUser;
-      const role = appState.userRole || "Parent";
-
-      if (roleElement) {
-        roleElement.textContent = role;
-      }
-
-      if (userElement) {
-        userElement.textContent = currentUser?.displayName || currentUser?.email || "Unknown";
-      }
-    }, 100);
-
     const logoutBtn = document.getElementById("logout-btn");
     if (logoutBtn) {
       logoutBtn.addEventListener("click", handleLogout);
     }
+
+    const checkAuthReady = setInterval(() => {
+      if (appState.authReady) {
+        clearInterval(checkAuthReady);
+        if (appState.currentUser) {
+          const userTarget = document.getElementById("admin-current-user");
+          if (userTarget) {
+            userTarget.textContent = appState.currentUser.displayName || appState.currentUser.email;
+          }
+        }
+      }
+    }, 100);
   </script>
 </body>
 </html>

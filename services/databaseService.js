@@ -25,9 +25,14 @@ import {
 } from "./firebase-config.js";
 import { canPerformAction } from "../constants/authConstants.js";
 import { createParkModel } from "../models/parkModel.js";
+import {
+  AUDIT_EVENT_TYPES,
+  createAuditLogModel,
+  isValidAuditEventType
+} from "../models/auditLogModel.js";
+import { USER_ROLES } from "../models/userModel.js";
 import { createEquipmentModel, isValidEquipmentStatus } from "../models/equipmentModel.js";
 import { createSafetyReportModel, isValidReportType } from "../models/safetyReportModel.js";
-import { createAuditLogModel, isValidAuditEventType } from "../models/auditLogModel.js";
 import { NOTIFICATION_EVENT_TYPES, notifyUser } from "./notificationService.js";
 import {
   BUSY_LEVEL_WEIGHTING_POLICY,
@@ -133,6 +138,64 @@ function sortParksByName(parks = []) {
     const rightName = (right.name || "").toLowerCase();
     return leftName.localeCompare(rightName);
   });
+}
+
+async function getUserRecordByUid(db, uid) {
+  if (!uid) {
+    return null;
+  }
+
+  const directRef = doc(db, "users", uid);
+  const directSnapshot = await getDoc(directRef);
+
+  if (directSnapshot.exists()) {
+    return {
+      id: directSnapshot.id,
+      ref: directRef,
+      data: directSnapshot.data()
+    };
+  }
+
+  const usersQuery = query(collection(db, "users"), where("uid", "==", uid), limit(1));
+  const usersSnapshot = await getDocs(usersQuery);
+
+  if (usersSnapshot.empty) {
+    return null;
+  }
+
+  const foundDoc = usersSnapshot.docs[0];
+  return {
+    id: foundDoc.id,
+    ref: doc(db, "users", foundDoc.id),
+    data: foundDoc.data()
+  };
+}
+
+async function assertAuthorizedUserForAction(db, userId, action) {
+  const actor = await getUserRecordByUid(db, userId);
+
+  if (!actor) {
+    throw new Error("Actor user record not found.");
+  }
+
+  const role = actor.data?.role;
+  if (!canPerformAction(role, action)) {
+    throw new Error("You do not have permission to complete this request.");
+  }
+
+  return actor;
+}
+
+function normalizeModerationAction(action) {
+  if (action === "hide" || action === "disable") {
+    return "hide";
+  }
+
+  if (action === "reinstate") {
+    return "reinstate";
+  }
+
+  return null;
 }
 
 async function queryParksByPrefixField(field, searchPrefix, options = {}) {
@@ -1135,6 +1198,298 @@ async function logAuditEvent(event = {}) {
   }
 }
 
+/**
+ * Sprint 3 Workstream 2 (2.5): Assign a Park Admin to a park.
+ * Site Admin only. Writes assignment metadata to users collection and logs audit event.
+ */
+async function assignParkAdmin(parkId, targetUserId, assignedByUserId) {
+  if (!parkId || !targetUserId || !assignedByUserId) {
+    throw new Error("parkId, targetUserId, and assignedByUserId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const assigner = await assertAuthorizedUserForAction(db, assignedByUserId, "assignParkAdmin");
+
+    const parkRef = doc(db, "parks", parkId);
+    const parkSnapshot = await getDoc(parkRef);
+    if (!parkSnapshot.exists()) {
+      throw new Error("Park not found.");
+    }
+
+    const targetUser = await getUserRecordByUid(db, targetUserId);
+    if (!targetUser) {
+      throw new Error("Target user not found.");
+    }
+
+    const assignedParks = Array.isArray(targetUser.data.assignedParks)
+      ? targetUser.data.assignedParks
+      : [];
+
+    if (!assignedParks.includes(parkId)) {
+      assignedParks.push(parkId);
+    }
+
+    await updateDoc(targetUser.ref, {
+      assignedParks,
+      role: targetUser.data.role || USER_ROLES.PARK_ADMIN,
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.ADMIN_ASSIGNED,
+      actorId: assigner.data.uid || assigner.id,
+      targetId: targetUser.data.uid || targetUser.id,
+      parkId,
+      metadata: {
+        action: "assign_park_admin"
+      }
+    });
+
+    return {
+      success: true,
+      parkId,
+      targetUserId: targetUser.data.uid || targetUser.id,
+      assignedByUserId: assigner.data.uid || assigner.id,
+      assignedParks
+    };
+  } catch (error) {
+    throw createServiceError(error, "Assign park admin failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.5): Remove a Park Admin assignment from a park.
+ * Site Admin only. Writes assignment metadata to users collection and logs audit event.
+ */
+async function removeParkAdmin(parkId, targetUserId, removedByUserId) {
+  if (!parkId || !targetUserId || !removedByUserId) {
+    throw new Error("parkId, targetUserId, and removedByUserId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const remover = await assertAuthorizedUserForAction(db, removedByUserId, "removeParkAdmin");
+
+    const targetUser = await getUserRecordByUid(db, targetUserId);
+    if (!targetUser) {
+      throw new Error("Target user not found.");
+    }
+
+    const assignedParks = (Array.isArray(targetUser.data.assignedParks)
+      ? targetUser.data.assignedParks
+      : []).filter((id) => id !== parkId);
+
+    await updateDoc(targetUser.ref, {
+      assignedParks,
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.ADMIN_REMOVED,
+      actorId: remover.data.uid || remover.id,
+      targetId: targetUser.data.uid || targetUser.id,
+      parkId,
+      metadata: {
+        action: "remove_park_admin"
+      }
+    });
+
+    return {
+      success: true,
+      parkId,
+      targetUserId: targetUser.data.uid || targetUser.id,
+      removedByUserId: remover.data.uid || remover.id,
+      assignedParks
+    };
+  } catch (error) {
+    throw createServiceError(error, "Remove park admin failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.6): Read filtered audit log records.
+ * Site Admin only. Unfiltered full-collection reads are blocked.
+ */
+async function getAuditLog(filters = {}) {
+  const requestedByUserId = filters.requestedByUserId;
+
+  if (!requestedByUserId) {
+    throw new Error("requestedByUserId is required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    await assertAuthorizedUserForAction(db, requestedByUserId, "viewAuditLog");
+
+    const constraints = [];
+
+    if (filters.parkId) {
+      constraints.push(where("parkId", "==", filters.parkId));
+    }
+
+    if (filters.actorId) {
+      constraints.push(where("actorId", "==", filters.actorId));
+    }
+
+    if (filters.targetId) {
+      constraints.push(where("targetId", "==", filters.targetId));
+    }
+
+    if (filters.eventType) {
+      if (!isValidAuditEventType(filters.eventType)) {
+        throw new Error("Invalid audit event type filter.");
+      }
+
+      constraints.push(where("eventType", "==", filters.eventType));
+    }
+
+    if (filters.fromTimestamp) {
+      constraints.push(where("timestamp", ">=", filters.fromTimestamp));
+    }
+
+    if (filters.toTimestamp) {
+      constraints.push(where("timestamp", "<=", filters.toTimestamp));
+    }
+
+    if (constraints.length === 0) {
+      throw new Error("At least one filter (parkId, actorId, targetId, eventType, fromTimestamp, toTimestamp) is required.");
+    }
+
+    const maxResults = Number.isFinite(Number(filters.limit))
+      ? Math.max(1, Math.min(Number(filters.limit), 100))
+      : 50;
+
+    const auditQuery = query(
+      collection(db, "auditLog"),
+      ...constraints,
+      orderBy("timestamp", "desc"),
+      limit(maxResults)
+    );
+    const snapshot = await getDocs(auditQuery);
+
+    return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+  } catch (error) {
+    throw createServiceError(error, "Get audit log failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.7): Moderate a review record.
+ * Park Admin may moderate only reviews in assigned parks; Site Admin may moderate all reviews.
+ */
+async function moderateReview(reviewId, action, moderatorId) {
+  if (!reviewId || !action || !moderatorId) {
+    throw new Error("reviewId, action, and moderatorId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const normalizedAction = normalizeModerationAction(action);
+
+    if (!normalizedAction) {
+      throw new Error("Action must be one of: hide, disable, reinstate.");
+    }
+
+    const moderator = await assertAuthorizedUserForAction(db, moderatorId, "moderateContent");
+    const moderatorRole = moderator.data.role;
+    const assignedParks = Array.isArray(moderator.data.assignedParks)
+      ? moderator.data.assignedParks
+      : [];
+
+    const reviewRef = doc(db, "reviews", reviewId);
+    const reviewSnapshot = await getDoc(reviewRef);
+    if (!reviewSnapshot.exists()) {
+      throw new Error("Review not found.");
+    }
+
+    const review = reviewSnapshot.data();
+    if (moderatorRole === USER_ROLES.PARK_ADMIN && !assignedParks.includes(review.parkId)) {
+      throw new Error("Park Admin can moderate reviews only for assigned parks.");
+    }
+
+    await updateDoc(reviewRef, {
+      hidden: normalizedAction === "hide",
+      moderatedBy: moderator.data.uid || moderator.id,
+      moderatedAt: new Date().toISOString(),
+      moderationAction: normalizedAction
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.CONTENT_MODERATED,
+      actorId: moderator.data.uid || moderator.id,
+      targetId: reviewId,
+      parkId: review.parkId || "",
+      metadata: {
+        action: normalizedAction
+      }
+    });
+
+    return {
+      success: true,
+      reviewId,
+      parkId: review.parkId || "",
+      action: normalizedAction,
+      hidden: normalizedAction === "hide"
+    };
+  } catch (error) {
+    throw createServiceError(error, "Moderate review failed.");
+  }
+}
+
+/**
+ * Sprint 3 Workstream 2 (2.7): Moderate a user account.
+ * Site Admin only.
+ */
+async function moderateUser(targetUserId, action, moderatorId) {
+  if (!targetUserId || !action || !moderatorId) {
+    throw new Error("targetUserId, action, and moderatorId are required.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const normalizedAction = normalizeModerationAction(action);
+
+    if (!normalizedAction) {
+      throw new Error("Action must be one of: hide, disable, reinstate.");
+    }
+
+    const moderator = await assertAuthorizedUserForAction(db, moderatorId, "moderateUser");
+    const targetUser = await getUserRecordByUid(db, targetUserId);
+
+    if (!targetUser) {
+      throw new Error("Target user not found.");
+    }
+
+    await updateDoc(targetUser.ref, {
+      disabled: normalizedAction === "hide",
+      moderationAction: normalizedAction,
+      moderatedBy: moderator.data.uid || moderator.id,
+      moderatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAuditEvent({
+      eventType: AUDIT_EVENT_TYPES.USER_MODERATED,
+      actorId: moderator.data.uid || moderator.id,
+      targetId: targetUser.data.uid || targetUser.id,
+      parkId: "",
+      metadata: {
+        action: normalizedAction
+      }
+    });
+
+    return {
+      success: true,
+      targetUserId: targetUser.data.uid || targetUser.id,
+      action: normalizedAction,
+      disabled: normalizedAction === "hide"
+    };
+  } catch (error) {
+    throw createServiceError(error, "Moderate user failed.");
+  }
+}
+
 export {
   createRecord,
   createUserRecord,
@@ -1152,6 +1507,11 @@ export {
   calculateBusyLevelFromReports,
   submitCrowdReport,
   logAuditEvent,
+  assignParkAdmin,
+  removeParkAdmin,
+  getAuditLog,
+  moderateReview,
+  moderateUser,
   createSafetyReport,
   getSafetyReports,
   updateSafetyReportStatus,

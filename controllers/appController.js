@@ -38,7 +38,12 @@ import {
 import {
   createParkRecord,
   editParkRecord,
+  getAuditLog,
   readRecords,
+  assignParkAdmin,
+  moderateReview,
+  moderateUser,
+  removeParkAdmin,
   updateRecord,
   updateEquipmentStatus,
   updateSafetyReportStatus,
@@ -114,7 +119,15 @@ const appState = {
   // Admin view state.
   adminParks: [],
   adminSelectedParkId: "",
-  adminPanelError: null
+  adminPanelError: null,
+  // Sprint 3 Workstream 2: administration actions and audit.
+  admin: {
+    actionMessage: null,
+    actionError: false,
+    isSubmitting: false,
+    auditEntries: [],
+    isLoadingAudit: false
+  }
 };
 
 function getCurrentView() {
@@ -188,6 +201,11 @@ function canEditParkRecord() {
 function canDeleteParkRecord() {
   const role = getCurrentUserRole();
   return role === USER_ROLES.SITE_ADMIN;
+}
+
+function canAccessAdminView() {
+  const role = getCurrentUserRole();
+  return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
 }
 
 function canManageSafetyReports() {
@@ -1161,6 +1179,243 @@ function clearCrowdReportSelection() {
   renderCrowdReportPanel();
 }
 
+function setAdminActionMessage(message, isError = false) {
+  appState.admin.actionMessage = message;
+  appState.admin.actionError = isError;
+
+  const actionContainer = document.getElementById("admin-action-message");
+  if (!actionContainer) {
+    return;
+  }
+
+  if (!message) {
+    actionContainer.style.display = "none";
+    actionContainer.textContent = "";
+    actionContainer.className = "";
+    return;
+  }
+
+  actionContainer.style.display = "block";
+  actionContainer.textContent = message;
+  actionContainer.className = isError ? "error-message show" : "park-form-success";
+}
+
+function renderAdminRoleVisibility() {
+  const roleValue = document.getElementById("admin-role-value");
+  if (roleValue) {
+    roleValue.textContent = appState.userRole || "Unknown";
+  }
+
+  const accessMessage = document.getElementById("admin-access-message");
+  const assignmentPanel = document.getElementById("admin-assignment-panel");
+  const moderationPanel = document.getElementById("admin-moderation-panel");
+  const userModerationSection = document.getElementById("admin-user-moderation-section");
+  const auditPanel = document.getElementById("admin-audit-panel");
+
+  if (!canAccessAdminView()) {
+    if (accessMessage) {
+      accessMessage.style.display = "block";
+      accessMessage.textContent = "You do not have permission to access administration tools.";
+      accessMessage.className = "error-message show";
+    }
+
+    if (assignmentPanel) assignmentPanel.style.display = "none";
+    if (moderationPanel) moderationPanel.style.display = "none";
+    if (auditPanel) auditPanel.style.display = "none";
+    return;
+  }
+
+  if (accessMessage) {
+    accessMessage.style.display = "none";
+    accessMessage.textContent = "";
+  }
+
+  if (getCurrentUserRole() === USER_ROLES.SITE_ADMIN) {
+    if (assignmentPanel) assignmentPanel.style.display = "block";
+    if (moderationPanel) moderationPanel.style.display = "block";
+    if (userModerationSection) userModerationSection.style.display = "block";
+    if (auditPanel) auditPanel.style.display = "block";
+    return;
+  }
+
+  if (assignmentPanel) assignmentPanel.style.display = "none";
+  if (moderationPanel) moderationPanel.style.display = "block";
+  if (userModerationSection) userModerationSection.style.display = "none";
+  if (auditPanel) auditPanel.style.display = "none";
+}
+
+function renderAuditLogResults() {
+  const resultsContainer = document.getElementById("admin-audit-results");
+  if (!resultsContainer) {
+    return;
+  }
+
+  if (appState.admin.isLoadingAudit) {
+    resultsContainer.innerHTML = "<p>Loading audit log...</p>";
+    return;
+  }
+
+  if (!Array.isArray(appState.admin.auditEntries) || appState.admin.auditEntries.length === 0) {
+    resultsContainer.innerHTML = "<p>No audit log entries found for the current filter.</p>";
+    return;
+  }
+
+  resultsContainer.innerHTML = appState.admin.auditEntries.map((entry) => {
+    const eventType = escapeHtml(entry.eventType || "unknown");
+    const actorId = escapeHtml(entry.actorId || "unknown");
+    const targetId = escapeHtml(entry.targetId || "unknown");
+    const parkId = escapeHtml(entry.parkId || "-");
+    const timestamp = escapeHtml(formatDisplayDateTime(entry.timestamp));
+
+    return `
+      <article class="card audit-log-item">
+        <p><strong>${eventType}</strong></p>
+        <p>Actor: ${actorId}</p>
+        <p>Target: ${targetId}</p>
+        <p>Park: ${parkId}</p>
+        <p>Time: ${timestamp}</p>
+      </article>
+    `;
+  }).join("");
+}
+
+async function handleAssignParkAdminFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const parkId = (document.getElementById("admin-assignment-park-id")?.value || "").trim();
+    const targetUserId = (document.getElementById("admin-assignment-user-id")?.value || "").trim();
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await assignParkAdmin(parkId, targetUserId, appState.currentUser?.uid);
+    setAdminActionMessage("Park Admin assignment saved.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to assign Park Admin."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleRemoveParkAdminFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const parkId = (document.getElementById("admin-assignment-park-id")?.value || "").trim();
+    const targetUserId = (document.getElementById("admin-assignment-user-id")?.value || "").trim();
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await removeParkAdmin(parkId, targetUserId, appState.currentUser?.uid);
+    setAdminActionMessage("Park Admin assignment removed.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to remove Park Admin assignment."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleModerateReviewFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const reviewId = (document.getElementById("admin-review-id")?.value || "").trim();
+    const action = document.getElementById("admin-review-action")?.value || "hide";
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await moderateReview(reviewId, action, appState.currentUser?.uid);
+    setAdminActionMessage("Review moderation action saved.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to moderate review."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleModerateUserFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const targetUserId = (document.getElementById("admin-target-user-id")?.value || "").trim();
+    const action = document.getElementById("admin-user-action")?.value || "disable";
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+
+    await moderateUser(targetUserId, action, appState.currentUser?.uid);
+    setAdminActionMessage("User moderation action saved.");
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to moderate user."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+async function handleLoadAuditLogFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const parkId = (document.getElementById("admin-audit-park-id")?.value || "").trim();
+    const actorId = (document.getElementById("admin-audit-actor-id")?.value || "").trim();
+    const eventType = (document.getElementById("admin-audit-event-type")?.value || "").trim();
+
+    appState.admin.isLoadingAudit = true;
+    setAdminActionMessage(null);
+    renderAuditLogResults();
+
+    const filters = {
+      requestedByUserId: appState.currentUser?.uid,
+      limit: 50
+    };
+
+    if (parkId) filters.parkId = parkId;
+    if (actorId) filters.actorId = actorId;
+    if (eventType) filters.eventType = eventType;
+
+    appState.admin.auditEntries = await getAuditLog(filters);
+    renderAuditLogResults();
+  } catch (error) {
+    appState.admin.auditEntries = [];
+    renderAuditLogResults();
+    setAdminActionMessage(formatAppError(error, "Failed to load audit log."), true);
+  } finally {
+    appState.admin.isLoadingAudit = false;
+  }
+}
+
+function initializeAdminHandlers() {
+  const assignForm = document.getElementById("admin-assignment-form");
+  const removeButton = document.getElementById("admin-remove-assignment-btn");
+  const reviewForm = document.getElementById("admin-review-moderation-form");
+  const userForm = document.getElementById("admin-user-moderation-form");
+  const auditForm = document.getElementById("admin-audit-filter-form");
+
+  if (assignForm) {
+    assignForm.addEventListener("submit", handleAssignParkAdminFromForm);
+  }
+
+  if (removeButton) {
+    removeButton.addEventListener("click", async (event) => {
+      await handleRemoveParkAdminFromForm(event);
+    });
+  }
+
+  if (reviewForm) {
+    reviewForm.addEventListener("submit", handleModerateReviewFromForm);
+  }
+
+  if (userForm) {
+    userForm.addEventListener("submit", handleModerateUserFromForm);
+  }
+
+  if (auditForm) {
+    auditForm.addEventListener("submit", handleLoadAuditLogFromForm);
+  }
+}
 function renderSprint3Panels() {
   renderNotificationPanel();
   renderSafetyReportPanel();
@@ -1419,7 +1674,6 @@ async function selectAdminPark(parkId) {
   await loadSprint3DetailData();
   renderAdminPanels();
 }
-
 async function loadUserRole(uid) {
   try {
     const users = await readRecords("users", { uid: uid });
@@ -1452,6 +1706,11 @@ function redirectIfAuthenticatedOnLoginView(currentView, user = appState.current
 function applyRouteAccessRules(firebaseUser) {
   if (isProtectedView(appState.currentView) && !firebaseUser) {
     redirectIfNotAuthenticated(appState.currentView, firebaseUser);
+    return true;
+  }
+
+  if (appState.currentView === "admin" && firebaseUser && !canAccessAdminView()) {
+    window.location.replace("./dashboard.html");
     return true;
   }
 
@@ -1510,6 +1769,11 @@ async function handleAuthStateChanged(firebaseUser) {
     }
     renderAdminPanels();
     renderNotificationPanel();
+  }
+
+  if (appState.currentView === "admin") {
+    renderAdminRoleVisibility();
+    renderAuditLogResults();
   }
 }
 
@@ -2071,7 +2335,7 @@ function renderParkForm() {
 }
 
 function initializeViewController() {
-  if (appState.currentView === "login" || appState.currentView === "profile") {
+  if (appState.currentView === "login" || appState.currentView === "profile" || appState.currentView === "admin") {
     initializeAuthController();
   }
 
@@ -2094,6 +2358,10 @@ function initializeViewController() {
 
     renderAdminPanels();
     renderNotificationPanel();
+  }
+
+  if (appState.currentView === "admin") {
+    initializeAdminHandlers();
   }
 }
 
