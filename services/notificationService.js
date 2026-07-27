@@ -34,13 +34,44 @@
 
 import {
   addDoc,
-  collection
+  collection,
+  limit,
+  onSnapshot,
+  query,
+  where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { getFirebaseServices, initializeFirebaseServices } from "./firebase-config.js";
 
 const NOTIFICATION_EVENT_TYPES = {
   SAFETY_REPORT_STATUS_CHANGED: "safety_report_status_changed"
 };
+
+function formatStatusLabel(value) {
+  return String(value || "")
+    .split("_")
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+function buildNotificationContent(event, payload = {}) {
+  if (event === NOTIFICATION_EVENT_TYPES.SAFETY_REPORT_STATUS_CHANGED) {
+    const parkName = payload.parkName || "Unknown park";
+    const reportType = payload.type || "safety report";
+    const fromStatus = formatStatusLabel(payload.fromStatus) || "Unknown";
+    const toStatus = formatStatusLabel(payload.toStatus) || "Unknown";
+
+    return {
+      title: `Safety report updated: ${parkName}`,
+      message: `${reportType} status changed from ${fromStatus} to ${toStatus}.`
+    };
+  }
+
+  return {
+    title: "Playground Pulse update",
+    message: "A new update is available."
+  };
+}
 
 async function notifyUser(userId, event, payload = {}) {
   if (!userId) {
@@ -56,9 +87,12 @@ async function notifyUser(userId, event, payload = {}) {
 
   try {
     const notificationsRef = collection(db, "notifications");
+    const content = buildNotificationContent(event, payload);
     const notificationDoc = {
       userId,
       event,
+      title: content.title,
+      message: content.message,
       payload,
       read: false,
       createdAt: new Date().toISOString()
@@ -71,4 +105,39 @@ async function notifyUser(userId, event, payload = {}) {
   }
 }
 
-export { NOTIFICATION_EVENT_TYPES, notifyUser };
+function subscribeToUserNotifications(userId, onChange, onError) {
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (typeof onChange !== "function") {
+    throw new Error("onChange callback is required.");
+  }
+
+  initializeFirebaseServices();
+  const { db } = getFirebaseServices();
+  const notificationsRef = collection(db, "notifications");
+  const notificationsQuery = query(
+    notificationsRef,
+    where("userId", "==", userId),
+    limit(100)
+  );
+
+  return onSnapshot(
+    notificationsQuery,
+    (snapshot) => {
+      const notifications = snapshot.docs
+        .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }))
+        .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""));
+
+      onChange(notifications);
+    },
+    (error) => {
+      if (typeof onError === "function") {
+        onError(error);
+      }
+    }
+  );
+}
+
+export { NOTIFICATION_EVENT_TYPES, notifyUser, subscribeToUserNotifications };

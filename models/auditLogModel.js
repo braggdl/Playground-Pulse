@@ -30,7 +30,9 @@ const AUDIT_EVENT_TYPES = {
   CONTENT_MODERATED: "content_moderated",
   USER_MODERATED: "user_moderated",
   SAFETY_STATUS_CHANGED: "safety_status_changed",
-  EQUIPMENT_STATUS_CHANGED: "equipment_status_changed"
+  EQUIPMENT_STATUS_CHANGED: "equipment_status_changed",
+  SAFETY_REPORT_DELETED: "safety_report_deleted",
+  EQUIPMENT_DELETED: "equipment_deleted"
 };
 
 const ALLOWED_AUDIT_EVENT_TYPES = Object.values(AUDIT_EVENT_TYPES);
