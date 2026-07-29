@@ -4,8 +4,10 @@ import {
 } from "./constants/authConstants.js";
 
 import {
+  normalizeCrowdLevel,
   getBusyLevelScoreFromCrowdLevel,
-  getBusyLevelLabel
+  getBusyLevelLabel,
+  canTransition
 } from "./constants/reportConstants.js";
 
 import { normalizeParkSearchPageSize } from "./constants/searchConstants.js";
@@ -195,6 +197,34 @@ if (sortParksByName) {
   }
 } else {
   console.log("SKIP: sortParksByName test was not run because the import was unavailable.");
+}
+
+// Test 18: Valid crowd levels should normalize to numbers.
+if (test("normalizeCrowdLevel converts valid crowd levels", normalizeCrowdLevel("3"), 3)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 19: Invalid crowd levels should be rejected.
+if (test("normalizeCrowdLevel rejects invalid crowd levels", normalizeCrowdLevel(9), null)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 20: Authorized roles should be allowed to complete a valid transition.
+if (test("canTransition allows an authorized role for a valid status transition", canTransition("open", "in_review", "Park Admin"), true)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 21: An invalid transition should be rejected even for an authorized role.
+if (test("canTransition rejects an invalid status transition", canTransition("resolved", "in_review", "Park Admin"), false)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
 }
 
 console.log(`\nSummary: ${passedCount} passed, ${failedCount} failed`);
