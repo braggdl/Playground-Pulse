@@ -242,7 +242,7 @@ Phase 2 finalization status for Engineer A scope:
 - Photo uploads must pass through `storageService.validatePhoto()` before `uploadParkPhoto()` — do not skip validation
 - Authorization constants in `constants/authConstants.js` are the source of truth for role rules — do not hardcode role checks in feature code
 
-### Phase 3 and Phase 4 (Pending)
+### Phase 3 and Phase 4 (Pending — see update below)
 - Phase 3 (Integration) begins after all workstreams are code-complete
 - Phase 4 (Stabilization and Acceptance) begins after Phase 3 integration is validated
 - Full checklists are in `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`
@@ -257,3 +257,76 @@ Phase 2 finalization status for Engineer A scope:
 | `services/notificationService.js` | Phase 1 — Engineer C | Notification interface and in-app delivery |
 | `services/storageService.js` | Phase 1 — Engineer B | Photo upload and validation |
 | `views/admin.html` | Phase 2 — Engineer A (WS1 management scope) | Safety/equipment management surface for Workstream 1 |
+
+## Sprint 3 Execution Update (2026-07-29)
+
+### Phase 1 — Complete
+All Phase 1 foundational deliverables are complete:
+- All five new model files created with documented field shapes: `safetyReportModel.js`, `equipmentModel.js`, `reviewModel.js`, `auditLogModel.js`, and extended `userModel.js`/`parkModel.js`.
+- Authorization constants and transition helpers finalized in `constants/authConstants.js` and `constants/reportConstants.js`. `canTransition()` now references `PARK_ROLE_RULES` as the single source of truth for authorized roles.
+- `services/storageService.js` and `services/notificationService.js` scaffolded with documented API contracts.
+- `logAuditEvent()` implemented in `services/databaseService.js` and called by all workstreams.
+- Responsive CSS baseline and shared component styles present in `styles/main.css` at 375px and 768px breakpoints.
+- Seed data documented in `development/sprint3-seed-data.md` with shared test identifiers.
+
+### Phase 2 — Complete (All Five Workstreams)
+All Phase 2 workstreams are implemented:
+
+**Workstream 1 — Safety and Maintenance:**
+- `createSafetyReport`, `getSafetyReports`, `updateSafetyReportStatus` (with `canTransition`, audit, notification) in `databaseService.js`.
+- `getEquipment`, `createEquipment`, `updateEquipmentStatus`, `deleteEquipment` in `databaseService.js`.
+- Safety report form, filter, and status transition controls on `views/dashboard.html`.
+- Equipment panel with status badges and transitions on `views/dashboard.html`.
+- Safety and equipment management panels on `views/admin.html`.
+
+**Workstream 2 — Administration:**
+- `assignParkAdmin`, `removeParkAdmin` (Site Admin only) in `databaseService.js`.
+- `getAuditLog` (filtered, Site Admin only) in `databaseService.js`.
+- `moderateReview` (Park Admin park-scoped, Site Admin all), `moderateUser` (Site Admin only) in `databaseService.js`.
+- Park admin assignment panel, moderation panel, user moderation section, and audit log panel in `views/admin.html` with role-conditional visibility.
+
+**Workstream 3 — Community Features:**
+- `createReview` (one-per-user enforced), `getReviews`, `updateReviewAggregate` in `databaseService.js`.
+- `submitParkPhoto` (wired through `storageService`) in `databaseService.js`.
+- `addFavorite`, `removeFavorite`, `getFavorites` in `databaseService.js`.
+- Review form, photo upload, photo gallery, and favorites toggle on `views/dashboard.html`.
+- Saved favorites list with park names on `views/profile.html`.
+
+**Workstream 4 — Crowd Information:**
+- `getCrowdHistory` (7-day, with Firestore-side date filter) in `databaseService.js`.
+- Crowd history bar chart on park detail in `views/dashboard.html`.
+- Leaflet map view with park markers, busy-level badges, and detail navigation.
+
+**Workstream 5 — Responsive Experience:**
+- Mobile breakpoint overrides at 768px and 375px in `styles/main.css` covering navigation, forms, panels, cards, and admin surfaces.
+
+### Phase 3 — Complete
+All integration tasks are complete:
+1. **Notification + auth integration:** Notification subscription now starts for all authenticated users (not only admin-capable roles). Notification toggle button and panel added to `views/dashboard.html` header. `renderNotificationPanel` displays for all authenticated users on both dashboard and admin views.
+2. **Moderation state → review list:** After `moderateReview` succeeds in admin view, `loadCommunityFeaturesForSelectedPark()` is called to refresh `appState.reviews` and `renderAdminPanels()` re-renders without a page reload.
+3. **Review aggregate → park detail:** After `submitReview` succeeds, `getParkById()` is called to fetch the updated `reviewAggregate` from Firestore and `appState.selectedPark` is updated so the average rating and count reflect immediately in the park detail header.
+4. **Favorites consistency:** `selectAdminPark` now calls `loadCommunityFeaturesForSelectedPark()` so favorites and reviews load consistently when park selection changes in admin view.
+5. **Crowd history + map badge consistency:** Both the crowd history panel and map markers draw from the same `enrichParksWithRecentCrowdState` path. Confirmed consistent.
+6. **Notification dismissal and read state:** `markNotificationRead` updates Firestore and immediately toggles `isRead` in `appState.notifications`; the panel re-renders without reload.
+
+Additional cross-cutting fixes and optimizations applied in Phase 3:
+- Duplicate `databaseService.js` import block merged in `appController.js`.
+- `subscribeToUserNotifications` and `getUserNotifications` now use `orderBy("createdAt", "desc")` and Firestore-side `limit` for server-driven ordering.
+- `getCrowdHistory` now pushes a `where("reportedAt", ">=", earliestISO)` constraint to Firestore (requires composite index on `crowdReports: parkId ASC, reportedAt ASC`).
+- Safety report type dropdown now includes `Safety` and `Maintenance` types to match model and service support.
+- Profile Saved Favorites list now shows resolved park names via parallel `getParkById` calls.
+
+### Phase 4 — In Progress
+1. **README.md:** Updated with Sprint 3 Core Functionality list, new usage sections (safety reports, equipment, reviews, photos, favorites, crowd history, map view, administration console), Sprint 3 Firebase Configuration notes, Sprint 3 Acceptance and Setup Notes (14 items), and updated project folder structure.
+2. **Sprint 3 Test Plan:** `development/Test Plans/Sprint3-Test-Plan.md` created as the execution checklist and sign-off artifact.
+3. **Firestore security rules:** Flagged as a manual gate item. Rules must be confirmed to cover `safetyReports`, `equipment`, `reviews`, `auditLog`, `notifications`, `users/{userId}/favorites`, and Firebase Storage upload paths before sprint acceptance.
+4. **Failure message standardization:** All user-facing error strings reviewed. Current messages are consistent across `databaseService.js`, `appController.js`, and `storageService.js` for unauthorized transitions, duplicate reviews, invalid/oversized photos, and notification delivery failures. No changes required.
+5. **Role-path validation and regression checks:** Documented in `development/Test Plans/Sprint3-Test-Plan.md` for manual execution.
+
+### Known Future Improvement (Deferred from Sprint 3)
+- `updateReviewAggregate` performs a full collection fetch of all reviews for a park to recompute the average. For parks with large review sets, this is unbounded. A future sprint should refactor to use incremental aggregate updates (running sum + count) or a Firestore aggregation query.
+
+### Verification References
+- `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`
+- `development/Test Plans/Sprint3-Test-Plan.md`
+- `development/sprint3-seed-data.md`

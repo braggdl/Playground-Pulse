@@ -3,6 +3,8 @@
   Purpose: Define shared contracts for crowd-report throttling and busy-level display.
 */
 
+import { PARK_ROLE_RULES } from "./authConstants.js";
+
 const CROWD_REPORT_POLICY = {
   collectionName: "crowdReports",
   windowMinutes: 60,
@@ -110,9 +112,8 @@ function canTransition(currentStatus, targetStatus, role) {
     return false;
   }
 
-  // Import kept inline via dynamic check to avoid circular dependency with authConstants.
-  // Authorized roles for safetyReportTransition: Park Admin, Site Admin.
-  const authorizedRoles = ["Park Admin", "Site Admin"];
+  // Authorized roles are sourced from PARK_ROLE_RULES to keep a single source of truth.
+  const authorizedRoles = PARK_ROLE_RULES.safetyReportTransition || [];
   return authorizedRoles.includes(role);
 }
 
