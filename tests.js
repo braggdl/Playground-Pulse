@@ -1,6 +1,8 @@
 import {
   getPasswordValidationErrors,
-  canPerformAction
+  canPerformAction,
+  extractAuthErrorCode,
+  getFriendlyAuthMessage
 } from "./constants/authConstants.js";
 
 import {
@@ -195,6 +197,62 @@ if (sortParksByName) {
   }
 } else {
   console.log("SKIP: sortParksByName test was not run because the import was unavailable.");
+}
+
+// Test 18: An error object with a .code property should return that code directly.
+if (test("extractAuthErrorCode reads code from error.code", extractAuthErrorCode({ code: "auth/user-not-found" }), "auth/user-not-found")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 19: When there is no .code property, the code should be extracted from the message string.
+if (test("extractAuthErrorCode parses code from error.message when .code is absent", extractAuthErrorCode({ message: "Firebase: Error (auth/wrong-password)." }), "auth/wrong-password")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 20: A null error should return null without throwing.
+if (test("extractAuthErrorCode returns null for a null error", extractAuthErrorCode(null), null)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 21: An error whose message contains no recognizable auth code should return null.
+if (test("extractAuthErrorCode returns null when no auth code is present", extractAuthErrorCode({ message: "Something went wrong." }), null)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 22: A known error code should resolve to the correct user-facing message.
+if (test("getFriendlyAuthMessage returns the correct message for a known error code", getFriendlyAuthMessage({ code: "auth/email-already-in-use" }), "Email already registered. Please log in or use a different email.")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 23: A known code embedded in the error message should still map to the right string.
+if (test("getFriendlyAuthMessage resolves a code embedded in the error message", getFriendlyAuthMessage({ message: "Firebase: Error (auth/too-many-requests)." }), "Too many attempts. Please wait and try again later.")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 24: An unrecognized error code should fall back to the default fallback message.
+if (test("getFriendlyAuthMessage falls back to the default message for an unknown error code", getFriendlyAuthMessage({ code: "auth/unknown-code" }), "Authentication request failed.")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 25: A custom fallback message should be returned when the error cannot be mapped.
+if (test("getFriendlyAuthMessage uses a custom fallback message when provided", getFriendlyAuthMessage(null, "Please try again."), "Please try again.")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
 }
 
 console.log(`\nSummary: ${passedCount} passed, ${failedCount} failed`);
