@@ -37,6 +37,7 @@ import {
   collection,
   limit,
   onSnapshot,
+  orderBy,
   query,
   where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -120,6 +121,7 @@ function subscribeToUserNotifications(userId, onChange, onError) {
   const notificationsQuery = query(
     notificationsRef,
     where("userId", "==", userId),
+    orderBy("createdAt", "desc"),
     limit(100)
   );
 

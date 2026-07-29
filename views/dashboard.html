@@ -29,12 +29,17 @@
     <nav class="app-nav">
       <a href="./dashboard.html" class="nav-link active">Dashboard</a>
       <a href="./profile.html" class="nav-link">Profile</a>
-      <a href="./admin.html" id="nav-admin-link" class="nav-link" style="display: none;">Admin <span id="admin-notification-count" class="badge badge-unread" style="display: none;">0</span></a>
+      <a href="./admin.html" id="nav-admin-link" class="nav-link" style="display: none;">Admin</a>
+      <button id="admin-notifications-toggle-btn" type="button" class="btn btn-secondary notification-toggle" style="display: none;">
+        Notifications
+        <span id="admin-notification-unread-count" class="badge badge-unread" style="display: none;">0</span>
+      </button>
       <button id="logout-btn" class="btn btn-secondary">Logout</button>
     </nav>
   </header>
 
   <main class="dashboard-container">
+    <div id="notification-panel-container" class="notification-panel-container"></div>
     <div class="user-info-section">
       <h2>Welcome, <span id="user-display-name">User</span>!</h2>
       <p>Role: <span id="user-role" class="role-badge">Parent</span></p>

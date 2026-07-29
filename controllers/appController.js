@@ -16,45 +16,43 @@ import {
   SAFETY_REPORT_TRANSITIONS
 } from "../constants/reportConstants.js";
 import {
-  calculateBusyLevelFromReports,
   addFavorite,
-  createReview,
+  assignParkAdmin,
+  calculateBusyLevelFromReports,
   createEquipment,
+  createParkRecord,
+  createReview,
   createSafetyReport,
   deleteEquipment,
   deleteSafetyReport,
+  editParkRecord,
+  getAuditLog,
   getCrowdHistory,
   getEquipment,
   getFavorites,
-  getSafetyReports,
-  getUserNotifications,
   getParkById,
   getRecentCrowdReportsForPark,
   getReviews,
+  getSafetyReports,
+  getUserNotifications,
   markNotificationRead,
+  moderateReview,
+  moderateUser,
+  readRecords,
   removeFavorite,
+  removeParkAdmin,
+  searchAndFilterParks,
   submitCrowdReport,
-  submitParkPhoto
+  submitParkPhoto,
+  updateEquipmentStatus,
+  updateRecord,
+  updateSafetyReportStatus
 } from "../services/databaseService.js";
 import { subscribeToUserNotifications } from "../services/notificationService.js";
 import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "../services/firebase-config.js";
-import {
-  createParkRecord,
-  editParkRecord,
-  getAuditLog,
-  readRecords,
-  assignParkAdmin,
-  moderateReview,
-  moderateUser,
-  removeParkAdmin,
-  updateRecord,
-  updateEquipmentStatus,
-  updateSafetyReportStatus,
-  searchAndFilterParks
-} from "../services/databaseService.js";
 
 const appState = {
   isInitialized: false,
@@ -757,8 +755,7 @@ function renderNotificationPanel() {
   const adminNavBadge = document.getElementById("admin-notification-count");
   const panelContainer = document.getElementById("notification-panel-container");
 
-  const isAdminCapable = isAuthenticated() && (canManageSafetyReports() || canManageEquipment());
-  const canShowNotifications = isAdminCapable && appState.currentView === "admin";
+  const canShowNotifications = isAuthenticated() && (appState.currentView === "admin" || appState.currentView === "dashboard");
 
   if (toggleButton) {
     toggleButton.style.display = canShowNotifications ? "inline-flex" : "none";
@@ -835,6 +832,8 @@ function renderSafetyReportPanel() {
             <option value="hazard" ${appState.safetyReportType === "hazard" ? "selected" : ""}>Hazard</option>
             <option value="injury" ${appState.safetyReportType === "injury" ? "selected" : ""}>Injury</option>
             <option value="concern" ${appState.safetyReportType === "concern" ? "selected" : ""}>General Concern</option>
+            <option value="safety" ${appState.safetyReportType === "safety" ? "selected" : ""}>Safety</option>
+            <option value="maintenance" ${appState.safetyReportType === "maintenance" ? "selected" : ""}>Maintenance</option>
           </select>
         </div>
         <div class="form-group">
@@ -1357,6 +1356,8 @@ async function handleModerateReviewFromForm(event) {
 
     await moderateReview(reviewId, action, appState.currentUser?.uid);
     setAdminActionMessage("Review moderation action saved.");
+    await loadCommunityFeaturesForSelectedPark();
+    renderAdminPanels();
   } catch (error) {
     setAdminActionMessage(formatAppError(error, "Failed to moderate review."), true);
   } finally {
@@ -1700,6 +1701,7 @@ async function selectAdminPark(parkId) {
   appState.adminSelectedParkId = parkId;
   appState.selectedPark = parkId ? await loadCrowdReportStateForPark(parkId) : null;
   await loadSprint3DetailData();
+  await loadCommunityFeaturesForSelectedPark();
   renderAdminPanels();
 }
 async function loadUserRole(uid) {
@@ -1761,12 +1763,7 @@ async function handleAuthStateChanged(firebaseUser) {
   // Phase 2: Load user role from Firestore when user logs in
   if (firebaseUser) {
     await loadUserRole(firebaseUser.uid);
-    if (canManageSafetyReports() || canManageEquipment()) {
-      await startNotificationsSubscription();
-    } else {
-      stopNotificationsSubscription();
-      normalizeNotificationList([]);
-    }
+    await startNotificationsSubscription();
   } else {
     stopNotificationsSubscription();
     normalizeNotificationList([]);
@@ -2394,6 +2391,10 @@ function initializeViewController() {
 
   // Phase 3: Initialize search and filter handlers for dashboard
   if (appState.currentView === "dashboard") {
+    const notificationToggleButton = document.getElementById("admin-notifications-toggle-btn");
+    if (notificationToggleButton) {
+      notificationToggleButton.addEventListener("click", toggleNotificationPanel);
+    }
     initializeParkSearchAndFilter();
     applyInitialDashboardSearchFromUrl();
     renderCrowdReportPanel();
@@ -2440,9 +2441,20 @@ async function renderProfileFavorites() {
       return;
     }
 
+    const enrichedFavorites = await Promise.all(
+      favorites.map(async (favorite) => {
+        try {
+          const park = await getParkById(favorite.parkId);
+          return { ...favorite, parkName: park.name || favorite.parkId };
+        } catch {
+          return { ...favorite, parkName: favorite.parkId };
+        }
+      })
+    );
+
     favoritesContainer.innerHTML = `
       <ul class="review-list">
-        ${favorites.map((favorite) => `<li class="review-item"><strong>${escapeHtml(favorite.parkId || "Park")}</strong><p class="muted">Saved on ${escapeHtml(formatDisplayDateTime(favorite.createdAt))}</p></li>`).join("")}
+        ${enrichedFavorites.map((favorite) => `<li class="review-item"><strong>${escapeHtml(favorite.parkName)}</strong><p class="muted">Saved on ${escapeHtml(formatDisplayDateTime(favorite.createdAt))}</p></li>`).join("")}
       </ul>
     `;
   } catch (error) {
@@ -2572,13 +2584,15 @@ async function submitReview(parkId) {
     appState.reviewSuccess = "Review submitted successfully.";
     appState.reviewForm = { rating: 5, body: "" };
     appState.reviews = [createdReview, ...appState.reviews];
-    appState.selectedPark = {
-      ...appState.selectedPark,
-      reviewAggregate: {
-        averageRating: appState.selectedPark.reviewAggregate?.averageRating ?? null,
-        reviewCount: appState.selectedPark.reviewAggregate?.reviewCount ?? 0
-      }
-    };
+    try {
+      const refreshedPark = await getParkById(parkId);
+      appState.selectedPark = {
+        ...appState.selectedPark,
+        reviewAggregate: refreshedPark.reviewAggregate || { averageRating: null, reviewCount: 0 }
+      };
+    } catch {
+      // Keep the existing park state if the refresh fails; aggregate will sync on next detail load.
+    }
     appState.reviewSubmitting = false;
     renderParkDetail();
   } catch (error) {

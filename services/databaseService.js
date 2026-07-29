@@ -1024,18 +1024,18 @@ async function getUserNotifications(userId, options = {}) {
   try {
     const db = getDatabaseService();
     const notificationsRef = collection(db, "notifications");
-    const snapshot = await getDocs(query(notificationsRef, where("userId", "==", userId)));
-
     const includeRead = options.includeRead !== false;
     const limitCount = Math.max(1, Number(options.limitCount || 50));
+    const constraints = [where("userId", "==", userId)];
 
-    const notifications = snapshot.docs
-      .map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }))
-      .filter((notification) => (includeRead ? true : !notification.read))
-      .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""))
-      .slice(0, limitCount);
+    if (!includeRead) {
+      constraints.push(where("read", "==", false));
+    }
 
-    return notifications;
+    constraints.push(orderBy("createdAt", "desc"), limit(limitCount));
+
+    const snapshot = await getDocs(query(notificationsRef, ...constraints));
+    return snapshot.docs.map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }));
   } catch (error) {
     throw createServiceError(error, "Get notifications failed.");
   }
@@ -1073,11 +1073,12 @@ async function getCrowdHistory(parkId, days = 7) {
   try {
     const db = getDatabaseService();
     const crowdReportsRef = getCrowdReportsCollection(db);
-    const snapshot = await getDocs(query(crowdReportsRef, where("parkId", "==", parkId)));
+    // Requires a composite Firestore index on (parkId ASC, reportedAt ASC).
+    const earliestISO = `${earliestDateKey}T00:00:00.000Z`;
+    const snapshot = await getDocs(query(crowdReportsRef, where("parkId", "==", parkId), where("reportedAt", ">=", earliestISO)));
 
     const reports = snapshot.docs
-      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }))
-      .filter((report) => String(report.reportedAt || "").slice(0, 10) >= earliestDateKey);
+      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }));
 
     const grouped = new Map();
     reports.forEach((report) => {
@@ -1150,23 +1151,6 @@ async function editParkRecord(parkId, updatedData) {
   return getParkById(parkId);
 }
 
-/**
- * Sprint 3 Phase 1: Write an audit log entry to the auditLog collection.
- * All administrative actions (safety report transitions, equipment status changes,
- * admin assignments, moderation actions) must call this method.
- *
- * logAuditEvent(event) → Promise<{ id: string }>
- *   Input:  event object with { eventType, actorId, targetId, parkId?, metadata?, timestamp? }
- *   Output: object with the Firestore document ID of the created audit log entry
- *   Errors:
- *     Throws Error("eventType is required.")  if eventType is falsy
- *     Throws Error("actorId is required.")    if actorId is falsy
- *     Throws Error("targetId is required.")   if targetId is falsy
- *     Throws Error with Firestore error message on write failure
- *
- * NOTE: Reads of the auditLog collection must always use filtered queries
- * (by park, actor, or eventType). Full-collection reads are not supported.
- */
 async function createReview(parkId, userId, reviewData = {}) {
   if (!parkId) {
     throw new Error("Park ID is required.");

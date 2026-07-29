@@ -9,3 +9,4 @@
 - Instructed full Phase 2 Workstream 1 Admin UI implementation of AI. May need to coalesce with Workstream 2 into a uniform UI / web page. 
 - May replace Leaflet with Google Maps after researching Google Maps API / billing account requirements.
 - May replace simple bar chart with Chart library for crowd visualization. 
+AI: The suggested fix was an incremental update using the park's existing reviewAggregate (stored count + sum) rather than a full re-fetch, or use of a Firestore aggregation query.
