@@ -6,8 +6,10 @@ import {
 } from "./constants/authConstants.js";
 
 import {
+  normalizeCrowdLevel,
   getBusyLevelScoreFromCrowdLevel,
-  getBusyLevelLabel
+  getBusyLevelLabel,
+  canTransition
 } from "./constants/reportConstants.js";
 
 import { normalizeParkSearchPageSize } from "./constants/searchConstants.js";
@@ -199,56 +201,84 @@ if (sortParksByName) {
   console.log("SKIP: sortParksByName test was not run because the import was unavailable.");
 }
 
-// Test 18: An error object with a .code property should return that code directly.
+// Test 18: Valid crowd levels should normalize to numbers.
+if (test("normalizeCrowdLevel converts valid crowd levels", normalizeCrowdLevel("3"), 3)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 19: Invalid crowd levels should be rejected.
+if (test("normalizeCrowdLevel rejects invalid crowd levels", normalizeCrowdLevel(9), null)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 20: Authorized roles should be allowed to complete a valid transition.
+if (test("canTransition allows an authorized role for a valid status transition", canTransition("open", "in_review", "Park Admin"), true)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 21: An invalid transition should be rejected even for an authorized role.
+if (test("canTransition rejects an invalid status transition", canTransition("resolved", "in_review", "Park Admin"), false)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 22: An error object with a .code property should return that code directly.
 if (test("extractAuthErrorCode reads code from error.code", extractAuthErrorCode({ code: "auth/user-not-found" }), "auth/user-not-found")) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 19: When there is no .code property, the code should be extracted from the message string.
+// Test 23: When there is no .code property, the code should be extracted from the message string.
 if (test("extractAuthErrorCode parses code from error.message when .code is absent", extractAuthErrorCode({ message: "Firebase: Error (auth/wrong-password)." }), "auth/wrong-password")) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 20: A null error should return null without throwing.
+// Test 24: A null error should return null without throwing.
 if (test("extractAuthErrorCode returns null for a null error", extractAuthErrorCode(null), null)) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 21: An error whose message contains no recognizable auth code should return null.
+// Test 25: An error whose message contains no recognizable auth code should return null.
 if (test("extractAuthErrorCode returns null when no auth code is present", extractAuthErrorCode({ message: "Something went wrong." }), null)) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 22: A known error code should resolve to the correct user-facing message.
+// Test 26: A known error code should resolve to the correct user-facing message.
 if (test("getFriendlyAuthMessage returns the correct message for a known error code", getFriendlyAuthMessage({ code: "auth/email-already-in-use" }), "Email already registered. Please log in or use a different email.")) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 23: A known code embedded in the error message should still map to the right string.
+// Test 27: A known code embedded in the error message should still map to the right string.
 if (test("getFriendlyAuthMessage resolves a code embedded in the error message", getFriendlyAuthMessage({ message: "Firebase: Error (auth/too-many-requests)." }), "Too many attempts. Please wait and try again later.")) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 24: An unrecognized error code should fall back to the default fallback message.
+// Test 28: An unrecognized error code should fall back to the default fallback message.
 if (test("getFriendlyAuthMessage falls back to the default message for an unknown error code", getFriendlyAuthMessage({ code: "auth/unknown-code" }), "Authentication request failed.")) {
   passedCount += 1;
 } else {
   failedCount += 1;
 }
 
-// Test 25: A custom fallback message should be returned when the error cannot be mapped.
+// Test 29: A custom fallback message should be returned when the error cannot be mapped.
 if (test("getFriendlyAuthMessage uses a custom fallback message when provided", getFriendlyAuthMessage(null, "Please try again."), "Please try again.")) {
   passedCount += 1;
 } else {
