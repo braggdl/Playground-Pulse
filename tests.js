@@ -285,6 +285,62 @@ if (test("getFriendlyAuthMessage uses a custom fallback message when provided", 
   failedCount += 1;
 }
 
+// Test 30: When both .code and .message exist, .code should take precedence.
+if (test("extractAuthErrorCode prioritizes .code over .message when both exist", extractAuthErrorCode({ code: "auth/invalid-email", message: "Firebase: Error (auth/wrong-password)." }), "auth/invalid-email")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 31: An error with uppercase auth code in the message should be normalized to lowercase.
+if (test("extractAuthErrorCode normalizes uppercase auth codes to lowercase", extractAuthErrorCode({ message: "Firebase: Error (AUTH/USER-NOT-FOUND)." }), "auth/user-not-found")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 32: An error object with neither .code nor .message should return null.
+if (test("extractAuthErrorCode returns null for an error object with no code or message", extractAuthErrorCode({ name: "Error" }), null)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 33: getFriendlyAuthMessage should honor an empty string fallback (not substitute the default).
+if (test("getFriendlyAuthMessage returns empty string fallback when provided", getFriendlyAuthMessage({ code: "auth/unknown-code" }, ""), "")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 34: When a message contains multiple auth codes, the first one should be extracted.
+if (test("extractAuthErrorCode extracts the first auth code when multiple are present", extractAuthErrorCode({ message: "Failed: auth/user-not-found or auth/wrong-password" }), "auth/user-not-found")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 35: A realistic Firebase error should flow through extractAuthErrorCode to getFriendlyAuthMessage successfully.
+if (test("Full chain: extractAuthErrorCode output maps correctly in getFriendlyAuthMessage", getFriendlyAuthMessage({ code: "auth/invalid-credential" }), "Incorrect email or password. Please try again.")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 36: extractAuthErrorCode should treat undefined the same as null.
+if (test("extractAuthErrorCode returns null for undefined error", extractAuthErrorCode(undefined), null)) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
+// Test 37: extractAuthErrorCode should capture long hyphenated error codes completely.
+if (test("extractAuthErrorCode extracts long hyphenated error codes", extractAuthErrorCode({ message: "Error: auth/credential-not-supported at line 42" }), "auth/credential-not-supported")) {
+  passedCount += 1;
+} else {
+  failedCount += 1;
+}
+
 console.log(`\nSummary: ${passedCount} passed, ${failedCount} failed`);
 
 if (failedCount > 0) {

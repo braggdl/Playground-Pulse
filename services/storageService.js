@@ -95,7 +95,9 @@ async function uploadParkPhoto(parkId, file) {
     const downloadURL = await getDownloadURL(snapshot.ref);
     return downloadURL;
   } catch (error) {
-    throw new Error(error?.message || "Photo upload failed. Please try again.");
+    const storageError = new Error(error?.message || "Photo upload failed. Please try again.");
+    storageError.code = error?.code || "storage/unknown";
+    throw storageError;
   }
 }
 

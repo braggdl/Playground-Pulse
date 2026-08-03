@@ -68,7 +68,7 @@ function createServiceError(error, fallbackMessage) {
   const errorCode = String(error?.code || "").toLowerCase();
   const errorMessage = String(error?.message || "").toLowerCase();
 
-  if (errorCode.includes("permission-denied")) {
+  if (errorCode.includes("permission-denied") || errorCode.includes("storage/unauthorized")) {
     return new Error("You do not have permission to complete this request.");
   }
 
