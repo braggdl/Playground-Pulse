@@ -7,6 +7,7 @@
 import { getApp, getApps, initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+import { getFunctions } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-functions.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-storage.js";
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -31,9 +32,10 @@ function initializeFirebaseServices() {
     const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const functions = getFunctions(app);
     const storage = getStorage(app);
 
-    firebaseServices = { app, auth, db, storage };
+    firebaseServices = { app, auth, db, functions, storage };
     return firebaseServices;
   } catch (error) {
     throw new Error("Firebase services could not be initialized.");

@@ -14,7 +14,7 @@ import {
   updateUserPassword
 } from "../services/authService.js";
 import { createUserRecord, updateRecord } from "../services/databaseService.js";
-import { createUserModel } from "../models/userModel.js";
+import { USER_ROLES, createUserModel } from "../models/userModel.js";
 
 let isAuthMode = "login"; // Track whether we're in login or register mode
 
@@ -374,12 +374,10 @@ async function handleRegister() {
   const emailInput = document.getElementById("register-email");
   const passwordInput = document.getElementById("register-password");
   const displayNameInput = document.getElementById("register-display-name");
-  const roleSelect = document.getElementById("register-role");
 
   const email = emailInput.value.trim();
   const password = passwordInput.value.trim();
   const displayName = displayNameInput.value.trim();
-  const role = roleSelect ? roleSelect.value : "Parent";
 
   setButtonLoading("register-btn", true);
 
@@ -392,7 +390,7 @@ async function handleRegister() {
       uid: firebaseUser.uid,
       email: firebaseUser.email,
       displayName: displayName,
-      role: role
+      role: USER_ROLES.PARENT
     });
 
     await createUserRecord(firebaseUser.uid, userRecord);

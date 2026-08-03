@@ -39,7 +39,7 @@
     }
   </style>
 </head>
-<body class="protected-pending">
+<body class="protected-pending app-shell-page admin-page">
   <header class="app-header">
     <h1>Playground Pulse Administration</h1>
     <nav class="app-nav">
@@ -51,6 +51,12 @@
   </header>
 
   <main class="admin-container">
+    <section class="card page-intro">
+      <p class="eyebrow">Administration</p>
+      <h2>Manage trusted contributors</h2>
+      <p class="page-intro-copy">Review protected workflows, maintain park operations, and prepare the secure invite path for privileged users.</p>
+    </section>
+
     <section class="card">
       <h2 class="admin-panel-title">Admin Console</h2>
       <p>User: <strong id="admin-current-user">Loading...</strong></p>
@@ -68,6 +74,34 @@
     </section>
 
     <section class="admin-grid">
+      <article id="admin-invite-panel" class="card admin-panel" style="display: none;">
+        <h3 class="admin-panel-title">Invite Admin Accounts</h3>
+        <p class="admin-help-text">Create a secure setup link for Park Admin and Site Admin accounts. Share the generated link directly with the invitee.</p>
+        <form id="admin-invite-form">
+          <div class="form-group">
+            <label for="admin-invite-email">Invitee Email</label>
+            <input id="admin-invite-email" type="email" placeholder="person@example.com" required />
+          </div>
+          <div class="form-group">
+            <label for="admin-invite-display-name">Display Name</label>
+            <input id="admin-invite-display-name" type="text" placeholder="Jordan Admin" />
+          </div>
+          <div class="form-group">
+            <label for="admin-invite-role">Account Role</label>
+            <select id="admin-invite-role">
+              <option value="Park Admin">Park Admin</option>
+              <option value="Site Admin">Site Admin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="admin-invite-park-ids">Assigned Park IDs</label>
+            <input id="admin-invite-park-ids" type="text" placeholder="park-test-001, park-test-002" />
+          </div>
+          <button type="submit" class="btn btn-primary">Generate Secure Invite</button>
+        </form>
+        <div id="admin-invite-result" class="admin-invite-result" style="display: none;"></div>
+      </article>
+
       <article id="admin-assignment-panel" class="card admin-panel" style="display: none;">
         <h3 class="admin-panel-title">Assign Park Admins</h3>
         <form id="admin-assignment-form">

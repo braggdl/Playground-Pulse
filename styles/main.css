@@ -1518,6 +1518,416 @@ main {
   color: #f9a825;
 }
 
+/* ============================================================
+   Final Stage Visual Refresh — Non-Home Pages
+   ============================================================ */
+
+:root {
+  --pp-sky-050: #f5fbff;
+  --pp-sky-100: #e3f4ff;
+  --pp-sky-200: #c8e8fb;
+  --pp-sky-400: #76bfeb;
+  --pp-sky-500: #5cbbeb;
+  --pp-sky-700: #2a6f95;
+  --pp-sun-100: #fff4bf;
+  --pp-sun-300: #ffd76a;
+  --pp-leaf-100: #e3f5dd;
+  --pp-leaf-500: #58a96a;
+  --pp-ink-900: #15354a;
+  --pp-ink-700: #3d5b6c;
+  --pp-ink-500: #6c8796;
+  --pp-surface: rgba(255, 255, 255, 0.9);
+  --pp-surface-strong: #ffffff;
+  --pp-border: rgba(57, 116, 147, 0.16);
+  --pp-shadow: 0 18px 40px rgba(43, 109, 144, 0.14);
+  --pp-radius-lg: 24px;
+  --pp-radius-md: 18px;
+  --pp-radius-sm: 12px;
+}
+
+body:not(.home-page) {
+  margin: 0;
+  padding: 0;
+  font-family: "Aptos", "Segoe UI", sans-serif;
+  color: var(--pp-ink-900);
+  background:
+    radial-gradient(circle at top left, rgba(255, 244, 191, 0.95), transparent 24%),
+    radial-gradient(circle at top right, rgba(118, 191, 235, 0.28), transparent 26%),
+    linear-gradient(180deg, #eaf7ff 0%, #f8fdff 42%, #f5fbff 100%);
+}
+
+body.auth-page {
+  position: relative;
+  overflow-x: hidden;
+}
+
+body.auth-page::before,
+body.auth-page::after,
+body.app-shell-page::before {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body.auth-page::before {
+  width: 22rem;
+  height: 22rem;
+  left: -8rem;
+  top: -6rem;
+  background: rgba(255, 215, 106, 0.26);
+}
+
+body.auth-page::after {
+  width: 18rem;
+  height: 18rem;
+  right: -5rem;
+  bottom: -4rem;
+  background: rgba(92, 187, 235, 0.2);
+}
+
+body.app-shell-page::before {
+  width: 24rem;
+  height: 24rem;
+  top: -11rem;
+  right: -9rem;
+  background: rgba(92, 187, 235, 0.18);
+}
+
+main {
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
+  margin: 0 auto;
+  background: transparent;
+  padding: 1.5rem;
+  border-radius: 0;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 0 auto 1.5rem;
+  max-width: 1120px;
+  padding: 1rem 1.25rem;
+  border-radius: 0 0 var(--pp-radius-md) var(--pp-radius-md);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--pp-ink-900);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 14px 32px rgba(30, 88, 120, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.app-header h1 {
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.app-nav {
+  gap: 0.65rem;
+}
+
+.nav-link {
+  color: var(--pp-ink-700);
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+}
+
+.nav-link:hover {
+  background-color: rgba(92, 187, 235, 0.12);
+}
+
+.nav-link.active {
+  background: linear-gradient(135deg, var(--pp-sky-500), #79c9ef);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(92, 187, 235, 0.28);
+}
+
+.btn {
+  border-radius: 999px;
+  padding: 0.82rem 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 20px rgba(29, 93, 125, 0.08);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--pp-sky-500), #7cc9ef);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #50b1e4, #70c5ee);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--pp-ink-900);
+  border: 1px solid rgba(92, 187, 235, 0.22);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(227, 244, 255, 0.96);
+  color: var(--pp-sky-700);
+}
+
+.btn-secondary:disabled,
+.btn-primary:disabled {
+  background: #d7e4eb;
+  color: #7a909b;
+}
+
+.auth-container {
+  min-height: 100vh;
+  padding: 2rem 1.25rem;
+}
+
+.auth-card,
+.dashboard-content,
+.profile-card,
+.card,
+.safety-report-panel,
+.equipment-panel,
+.crowd-history-panel,
+.admin-panel,
+.park-detail,
+.park-form-panel,
+.park-card,
+.search-filter-section,
+.notification-panel {
+  background: var(--pp-surface);
+  border: 1px solid var(--pp-border);
+  border-radius: var(--pp-radius-lg);
+  box-shadow: var(--pp-shadow);
+  backdrop-filter: blur(12px);
+}
+
+.auth-card {
+  max-width: 460px;
+  padding: 2.25rem;
+}
+
+.auth-card h1,
+.auth-card h2,
+.dashboard-content h2,
+.profile-card h2,
+.card h2,
+.card h3,
+.park-detail h2,
+.detail-section h3 {
+  color: var(--pp-ink-900);
+}
+
+.auth-card h1 {
+  margin-bottom: 0.75rem;
+  font-size: 2.1rem;
+}
+
+.auth-card h2 {
+  margin-bottom: 1rem;
+}
+
+.auth-helper-text {
+  color: var(--pp-ink-700);
+  font-size: 0.96rem;
+  line-height: 1.55;
+}
+
+.auth-intro {
+  margin: 0 auto 1.75rem;
+  text-align: center;
+  max-width: 28rem;
+}
+
+.form-group label,
+.filter-controls h3,
+.filter-group legend,
+.profile-field label {
+  color: var(--pp-ink-900);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea,
+.search-input,
+.filter-select {
+  border: 1px solid rgba(61, 91, 108, 0.16);
+  border-radius: var(--pp-radius-sm);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--pp-ink-900);
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus,
+.search-input:focus,
+.filter-select:focus {
+  outline: 2px solid rgba(92, 187, 235, 0.35);
+  outline-offset: 1px;
+  border-color: rgba(92, 187, 235, 0.88);
+  box-shadow: 0 0 0 5px rgba(92, 187, 235, 0.12);
+}
+
+.toggle-link {
+  color: var(--pp-sky-700);
+}
+
+.error-message,
+.park-form-error,
+.crowd-report-error,
+.state-error {
+  border-radius: var(--pp-radius-sm);
+}
+
+.park-form-success,
+.crowd-report-success {
+  background: #eef9ea;
+  border: 1px solid #cce8c4;
+  color: #2f6f3d;
+}
+
+.role-badge,
+.amenity-tag {
+  background: linear-gradient(135deg, #67c97f, var(--pp-leaf-500));
+  color: #ffffff;
+  border: none;
+}
+
+.profile-field p {
+  border-left: none;
+  border-radius: var(--pp-radius-sm);
+  background: rgba(245, 251, 255, 0.95);
+}
+
+.page-intro {
+  margin-bottom: 1.25rem;
+  padding: 1.4rem 1.5rem;
+}
+
+.page-intro h2 {
+  margin: 0.15rem 0 0.45rem;
+  font-size: clamp(1.45rem, 2vw, 1.95rem);
+}
+
+.page-intro-copy {
+  max-width: 50rem;
+  margin: 0;
+  color: var(--pp-ink-700);
+  line-height: 1.65;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--pp-sky-700);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-container,
+.profile-container,
+.admin-container {
+  max-width: 1120px;
+}
+
+.dashboard-content,
+.profile-container,
+.admin-container {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.profile-container,
+.admin-container {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.search-filter-section {
+  padding: 1.4rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(244, 251, 255, 0.96) 100%);
+}
+
+.filter-group,
+.review-item,
+.notification-item,
+.safety-report-item,
+.equipment-item,
+.admin-lookup-table th,
+.admin-lookup-table td {
+  border-radius: var(--pp-radius-sm);
+}
+
+.filter-group,
+.review-item,
+.notification-item,
+.safety-report-item,
+.equipment-item,
+.state-loading,
+.state-empty {
+  border-color: var(--pp-border);
+}
+
+.park-card:hover {
+  border-color: rgba(92, 187, 235, 0.48);
+  box-shadow: 0 22px 32px rgba(43, 109, 144, 0.16);
+}
+
+.results-header {
+  border-bottom-color: rgba(92, 187, 235, 0.18);
+}
+
+.close-button,
+.modal-close {
+  border: 0;
+  background: transparent;
+  color: var(--pp-ink-700);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.close-button:hover,
+.modal-close:hover {
+  color: var(--pp-ink-900);
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    border-radius: 0 0 var(--pp-radius-sm) var(--pp-radius-sm);
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+  }
+
+  .auth-container {
+    padding: 1.25rem 0.9rem;
+  }
+
+  .auth-card,
+  .dashboard-content,
+  .profile-card,
+  .card,
+  .search-filter-section,
+  .park-detail,
+  .park-card {
+    border-radius: 18px;
+  }
+
+  .page-intro {
+    padding: 1.1rem 1rem;
+  }
+
+  main {
+    padding: 1rem;
+  }
+}
+
 .favorites-toggle {
   background: none;
   border: none;
@@ -1718,6 +2128,50 @@ main {
   color: #1a73e8;
   cursor: text;
   user-select: all;
+}
+
+.admin-help-text {
+  margin-top: 0;
+  color: var(--pp-ink-700);
+  line-height: 1.55;
+}
+
+.admin-invite-result {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: var(--pp-radius-md);
+  border: 1px solid rgba(92, 187, 235, 0.22);
+  background: rgba(245, 251, 255, 0.95);
+}
+
+.admin-invite-result p {
+  margin: 0 0 0.55rem;
+}
+
+.admin-link-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--pp-ink-900);
+}
+
+.admin-link-box {
+  width: 100%;
+  min-height: 8rem;
+  resize: vertical;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(61, 91, 108, 0.16);
+  border-radius: var(--pp-radius-sm);
+  background: #ffffff;
+  color: var(--pp-ink-900);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.admin-link-box:focus {
+  outline: 2px solid rgba(92, 187, 235, 0.35);
+  outline-offset: 1px;
 }
 
 .park-map-container {
