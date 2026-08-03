@@ -6,10 +6,11 @@
   <title>Playground Pulse - Login</title>
   <link rel="stylesheet" href="../styles/main.css" />
 </head>
-<body>
+<body class="auth-page">
   <main class="auth-container">
     <div class="auth-card">
       <h1>Playground Pulse</h1>
+      <p class="auth-helper-text auth-intro">A bright, simple way to discover parks that fit your family.</p>
 
       <!-- Error Message Container -->
       <div id="auth-error-message" class="error-message" style="display: none;"></div>
@@ -39,7 +40,7 @@
         </div>
 
         <button type="button" id="login-btn" class="btn btn-primary">
-          Login
+          Sign In
         </button>
 
         <p class="auth-toggle">
@@ -96,17 +97,10 @@
           />
         </div>
 
-        <div class="form-group">
-          <label for="register-role">Account Type:</label>
-          <select id="register-role">
-            <option value="Parent">Parent</option>
-            <option value="Park Admin">Park Admin</option>
-            <option value="Site Admin">Site Admin</option>
-          </select>
-        </div>
+        <p class="auth-helper-text">Parent accounts can be created here. Park Admin and Site Admin accounts are issued through the administration process.</p>
 
         <button type="button" id="register-btn" class="btn btn-primary">
-          Register
+          Create Parent Account
         </button>
 
         <p class="auth-toggle">

@@ -9,8 +9,17 @@
 - Instructed full Phase 2 Workstream 1 Admin UI implementation of AI. May need to coalesce with Workstream 2 into a uniform UI / web page. 
 - May replace Leaflet with Google Maps after researching Google Maps API / billing account requirements.
 - May replace simple bar chart with Chart library for crowd visualization. 
-AI: The suggested fix was an incremental update using the park's existing reviewAggregate (stored count + sum) rather than a full re-fetch, or use of a Firestore aggregation query.
+- AI: The suggested fix was an incremental update using the park's existing reviewAggregate (stored count + sum) rather than a full re-fetch, or use of a Firestore aggregation query.
 - 7-Day Crowd Trend date range is currently dependent on last report. Needs to update to be a rolling 7-day window with current day in the middle. 
 - Report times are in UTC, not local time. Need general conversion function for broad use. 
 - Determine how 7-Day Crowd Trend reports the trend, not just the snapshot of data.
 - Add option to select or lookup park location when editing a park.  
+- AI: Add invite lifecycle management next: pending, revoked, expired, and accepted states in the admin UI.
+- AI: Tighten the security model further by adding Firestore rules and, if you want, custom claims for privileged roles.
+- Password rules are enforced client side. Password rules not enforced when doing password reset. 
+- Park Admins should not be able to Create Parks. 
+- Notifications button still visible on Dashboard page. 
+- Notifications should not be visible on any page to Parent accounts.
+- Map view becomes a blank screen when switching between parks.
+- Default map screen should should all park pins by default. 
+- Parks should be selectable by clicking a map pin. 

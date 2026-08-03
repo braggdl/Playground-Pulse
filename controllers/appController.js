@@ -50,6 +50,7 @@ import {
   updateSafetyReportStatus,
   getRecordById
 } from "../services/databaseService.js";
+import { inviteAdminAccount } from "../services/adminInvitationService.js";
 import { subscribeToUserNotifications } from "../services/notificationService.js";
 import {
   getFirebaseServices,
@@ -1304,6 +1305,27 @@ function setAdminActionMessage(message, isError = false) {
   actionContainer.className = isError ? "error-message show" : "park-form-success";
 }
 
+function setAdminInviteResult(result = null) {
+  const resultContainer = document.getElementById("admin-invite-result");
+  if (!resultContainer) {
+    return;
+  }
+
+  if (!result || !result.passwordSetupLink) {
+    resultContainer.style.display = "none";
+    resultContainer.innerHTML = "";
+    return;
+  }
+
+  resultContainer.style.display = "block";
+  resultContainer.innerHTML = `
+    <p><strong>${escapeHtml(result.role)}</strong> invite prepared for <strong>${escapeHtml(result.email)}</strong>.</p>
+    <p>Expires: ${escapeHtml(formatDisplayDateTime(result.expiresAt))}</p>
+    <label class="admin-link-label" for="admin-invite-link-output">Password setup link</label>
+    <textarea id="admin-invite-link-output" class="admin-link-box" readonly>${escapeHtml(result.passwordSetupLink)}</textarea>
+  `;
+}
+
 function renderAdminRoleVisibility() {
   const roleValue = document.getElementById("admin-role-value");
   if (roleValue) {
@@ -1311,6 +1333,7 @@ function renderAdminRoleVisibility() {
   }
 
   const accessMessage = document.getElementById("admin-access-message");
+  const invitePanel = document.getElementById("admin-invite-panel");
   const assignmentPanel = document.getElementById("admin-assignment-panel");
   const moderationPanel = document.getElementById("admin-moderation-panel");
   const userModerationSection = document.getElementById("admin-user-moderation-section");
@@ -1323,6 +1346,7 @@ function renderAdminRoleVisibility() {
       accessMessage.className = "error-message show";
     }
 
+    if (invitePanel) invitePanel.style.display = "none";
     if (assignmentPanel) assignmentPanel.style.display = "none";
     if (moderationPanel) moderationPanel.style.display = "none";
     if (auditPanel) auditPanel.style.display = "none";
@@ -1335,6 +1359,7 @@ function renderAdminRoleVisibility() {
   }
 
   if (getCurrentUserRole() === USER_ROLES.SITE_ADMIN) {
+    if (invitePanel) invitePanel.style.display = "block";
     if (assignmentPanel) assignmentPanel.style.display = "block";
     if (moderationPanel) moderationPanel.style.display = "block";
     if (userModerationSection) userModerationSection.style.display = "block";
@@ -1344,6 +1369,7 @@ function renderAdminRoleVisibility() {
     return;
   }
 
+  if (invitePanel) invitePanel.style.display = "none";
   if (assignmentPanel) assignmentPanel.style.display = "none";
   if (moderationPanel) moderationPanel.style.display = "block";
   if (userModerationSection) userModerationSection.style.display = "none";
@@ -1401,6 +1427,45 @@ async function handleAssignParkAdminFromForm(event) {
     setAdminActionMessage("Park Admin assignment saved.");
   } catch (error) {
     setAdminActionMessage(formatAppError(error, "Failed to assign Park Admin."), true);
+  } finally {
+    appState.admin.isSubmitting = false;
+  }
+}
+
+function parseInviteParkIds(value = "") {
+  return Array.from(new Set(
+    String(value || "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  ));
+}
+
+async function handleInviteAdminFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const email = (document.getElementById("admin-invite-email")?.value || "").trim();
+    const displayName = (document.getElementById("admin-invite-display-name")?.value || "").trim();
+    const role = document.getElementById("admin-invite-role")?.value || USER_ROLES.PARK_ADMIN;
+    const assignedParks = parseInviteParkIds(document.getElementById("admin-invite-park-ids")?.value || "");
+
+    appState.admin.isSubmitting = true;
+    setAdminActionMessage(null);
+    setAdminInviteResult(null);
+
+    const result = await inviteAdminAccount({
+      email,
+      displayName,
+      role,
+      assignedParks
+    });
+
+    setAdminActionMessage("Secure invite generated. Share the password setup link with the invitee.");
+    setAdminInviteResult(result);
+  } catch (error) {
+    setAdminActionMessage(formatAppError(error, "Failed to create invite."), true);
+    setAdminInviteResult(null);
   } finally {
     appState.admin.isSubmitting = false;
   }
@@ -1629,12 +1694,17 @@ async function handleAdminLookupFromForm(event) {
 }
 
 function initializeAdminHandlers() {
+  const inviteForm = document.getElementById("admin-invite-form");
   const assignForm = document.getElementById("admin-assignment-form");
   const removeButton = document.getElementById("admin-remove-assignment-btn");
   const reviewForm = document.getElementById("admin-review-moderation-form");
   const userForm = document.getElementById("admin-user-moderation-form");
   const auditForm = document.getElementById("admin-audit-filter-form");
   const lookupForm = document.getElementById("admin-lookup-form");
+
+  if (inviteForm) {
+    inviteForm.addEventListener("submit", handleInviteAdminFromForm);
+  }
 
   if (assignForm) {
     assignForm.addEventListener("submit", handleAssignParkAdminFromForm);

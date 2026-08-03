@@ -25,6 +25,7 @@
 */
 
 const AUDIT_EVENT_TYPES = {
+  ADMIN_INVITED: "admin_invited",
   ADMIN_ASSIGNED: "admin_assigned",
   ADMIN_REMOVED: "admin_removed",
   CONTENT_MODERATED: "content_moderated",
