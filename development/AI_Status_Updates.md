@@ -330,3 +330,38 @@ Additional cross-cutting fixes and optimizations applied in Phase 3:
 - `development/Sprint Implementation Plans/Sprint3-Implementation-Plan.md`
 - `development/Test Plans/Sprint3-Test-Plan.md`
 - `development/sprint3-seed-data.md`
+
+---
+
+## Post-Sprint 3 Bug Fix Log (2026-08-03)
+
+### Bug Fixes Applied
+
+**1. Stale crowd level displayed from weeks-old Firestore cache**
+- Root cause: `loadCrowdReportStateForPark` and `enrichParksWithRecentCrowdState` both used `busyLevel.score ?? fallbackBusyLevel.score` with no age check on the persisted Firestore value. A park's busyLevel from July 15th was being shown as current on August 3rd.
+- Fix: Added `fallbackIsStale` guard in both `appController.js` (`loadCrowdReportStateForPark`) and `databaseService.js` (`enrichParksWithRecentCrowdState`). Persisted `busyLevel` data older than `CROWD_REPORT_POLICY.windowMinutes` is ignored and the park shows "Unknown" instead.
+- Also changed: `CROWD_REPORT_POLICY.windowMinutes` raised from 60 to 150 (2.5-hour rolling window for calculation and expiry).
+
+**2. 7-Day Crowd Trend date range not updating at midnight / showing wrong day range**
+- Root cause A: `buildTrailingDateKeys` in `databaseService.js` used local-time `date.setHours(0,0,0,0)` then converted to UTC with `.toISOString()`. For UTC+ time zones this produces the previous UTC day, causing the chart to be one day behind. Even in UTC- zones this is inconsistent with how `reportedAt` UTC dates are sliced for grouping.
+- Fix: Rewrote `buildTrailingDateKeys` to use `Date.UTC(getUTCFullYear, getUTCMonth, getUTCDate - index)` so date keys are always UTC-aligned and consistent with `reportedAt.slice(0, 10)`.
+- Root cause B: `appState.crowdHistory` is loaded once when a park is selected and never refreshed. After midnight the in-memory date range becomes stale; reports submitted after the last load also don't appear with correct colors.
+- Fix: Added auto-refresh detection in `renderCrowdHistoryPanel`. If the last date in `appState.crowdHistory` is before today UTC, a background `loadCrowdHistoryForSelectedPark()` call is triggered automatically (guarded by `crowdHistoryStaleRefreshPending` flag to prevent loops). A manual "↻ Refresh" button is also added to the panel for on-demand reload.
+
+**3. Additional UI and behavior fixes (same session)**
+- Notifications button moved from top nav bar to main content area on dashboard (consistent with admin view placement).
+- Park create/edit form now includes Latitude and Longitude fields to link parks to map markers.
+- "Welcome, \<username\>!" static banner removed from dashboard; replaced with a one-time 2.5-second fade-in popup shown only after login/register (stored in `sessionStorage`).
+- Safety reports can now be reopened from "closed" status by Site Admin (`SAFETY_REPORT_TRANSITIONS.closed` updated, `canTransition` guards reopen to Site Admin only).
+- Admin "Browse Records & IDs" panel added (Site Admin only): browseable directory of Parks, Users, and Reviews with plain-English names alongside Firestore document IDs.
+- Firestore composite index errors for notifications and 7-Day Crowd Trend resolved by removing server-side `orderBy`/compound `where` constraints and filtering/sorting client-side instead.
+
+### Files Modified in This Session
+- `constants/reportConstants.js` — windowMinutes 60→150, SAFETY_REPORT_TRANSITIONS closed→open added, canTransition Site Admin reopen guard
+- `services/databaseService.js` — fallbackIsStale guard in enrichParksWithRecentCrowdState, buildTrailingDateKeys UTC fix, removed orderBy from getUserNotifications, removed compound where from getCrowdHistory, added getRecordById
+- `services/notificationService.js` — removed orderBy from subscribeToUserNotifications
+- `controllers/appController.js` — fallbackIsStale guard in loadCrowdReportStateForPark, welcome popup logic, lat/lng park form fields, admin lookup redesign, crowd history auto-refresh + manual refresh, CROWD_REPORT_POLICY import
+- `controllers/authController.js` — sessionStorage showWelcome flag on login/register
+- `views/dashboard.html` — moved notifications button, added welcome-popup-overlay div, removed user-info-section banner
+- `views/admin.html` — updated lookup panel to Browse Records & IDs with search-by-name
+- `styles/main.css` — welcome popup styles (flashy gradient, 2.5s), form-group-inline, notification-section, admin-lookup-table, crowd history bar color reset

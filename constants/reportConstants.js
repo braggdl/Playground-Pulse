@@ -7,8 +7,8 @@ import { PARK_ROLE_RULES } from "./authConstants.js";
 
 const CROWD_REPORT_POLICY = {
   collectionName: "crowdReports",
-  windowMinutes: 60,
-  reportsPerWindow: 1,
+  windowMinutes: 150,        // 2.5-hour rolling window for busy-level calculation and expiry
+  reportsPerWindow: 1,       // one submission per user per park per hourly dedup key
   validCrowdLevels: [1, 2, 3, 4]
 };
 
@@ -99,7 +99,7 @@ const SAFETY_REPORT_TRANSITIONS = {
   [SAFETY_REPORT_STATUSES.OPEN]: [SAFETY_REPORT_STATUSES.IN_REVIEW],
   [SAFETY_REPORT_STATUSES.IN_REVIEW]: [SAFETY_REPORT_STATUSES.RESOLVED],
   [SAFETY_REPORT_STATUSES.RESOLVED]: [SAFETY_REPORT_STATUSES.CLOSED],
-  [SAFETY_REPORT_STATUSES.CLOSED]: []
+  [SAFETY_REPORT_STATUSES.CLOSED]: [SAFETY_REPORT_STATUSES.OPEN]
 };
 
 // Sprint 3: Validate a safety report status transition and role authorization.
@@ -110,6 +110,11 @@ function canTransition(currentStatus, targetStatus, role) {
 
   if (!Array.isArray(allowedNextStatuses) || !allowedNextStatuses.includes(targetStatus)) {
     return false;
+  }
+
+  // Reopening a closed report is restricted to Site Admins only.
+  if (currentStatus === SAFETY_REPORT_STATUSES.CLOSED && targetStatus === SAFETY_REPORT_STATUSES.OPEN) {
+    return role === "Site Admin";
   }
 
   // Authorized roles are sourced from PARK_ROLE_RULES to keep a single source of truth.

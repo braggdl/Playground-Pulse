@@ -87,12 +87,14 @@ function buildTrailingDateKeys(days) {
   const totalDays = Math.max(1, Math.floor(Number(days) || 1));
   const dateKeys = [];
   const now = new Date();
+  // Use UTC components so the generated date keys match reportedAt UTC date extraction.
+  const utcYear = now.getUTCFullYear();
+  const utcMonth = now.getUTCMonth();
+  const utcDay = now.getUTCDate();
 
   for (let index = totalDays - 1; index >= 0; index -= 1) {
-    const date = new Date(now);
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - index);
-    dateKeys.push(date.toISOString().slice(0, 10));
+    const d = new Date(Date.UTC(utcYear, utcMonth, utcDay - index));
+    dateKeys.push(d.toISOString().slice(0, 10));
   }
 
   return dateKeys;
@@ -607,18 +609,27 @@ async function enrichParksWithRecentCrowdState(parks = []) {
     const fallbackBusyLevel = park.busyLevel || {};
     const fallbackCrowdReporting = park.crowdReporting || {};
 
+    // Treat persisted busyLevel data as stale if it is older than the calculation window.
+    const staleThresholdMs = CROWD_REPORT_POLICY.windowMinutes * 60 * 1000;
+    const fallbackUpdatedMs = fallbackBusyLevel.updatedAt
+      ? new Date(fallbackBusyLevel.updatedAt).getTime()
+      : 0;
+    const fallbackIsStale = (Date.now() - fallbackUpdatedMs) > staleThresholdMs;
+
     return {
       ...park,
       busyLevel: {
-        score: busyLevel.score ?? fallbackBusyLevel.score ?? null,
-        label: busyLevel.score !== null ? busyLevel.label : (fallbackBusyLevel.label || "Unknown"),
-        updatedAt: latestReport?.reportedAt || fallbackBusyLevel.updatedAt || null
+        score: busyLevel.score ?? (fallbackIsStale ? null : (fallbackBusyLevel.score ?? null)),
+        label: busyLevel.score !== null
+          ? busyLevel.label
+          : (fallbackIsStale ? "Unknown" : (fallbackBusyLevel.label || "Unknown")),
+        updatedAt: latestReport?.reportedAt || (fallbackIsStale ? null : (fallbackBusyLevel.updatedAt || null))
       },
       crowdReporting: {
         enabled: true,
-        reportCountLastHour: reports.length ? busyLevel.reportCount : Number(fallbackCrowdReporting.reportCountLastHour || 0),
-        lastReportedAt: latestReport?.reportedAt || fallbackCrowdReporting.lastReportedAt || null,
-        latestWindowKey: latestReport?.windowKey || fallbackCrowdReporting.latestWindowKey || null
+        reportCountLastHour: reports.length ? busyLevel.reportCount : (fallbackIsStale ? 0 : Number(fallbackCrowdReporting.reportCountLastHour || 0)),
+        lastReportedAt: latestReport?.reportedAt || (fallbackIsStale ? null : (fallbackCrowdReporting.lastReportedAt || null)),
+        latestWindowKey: latestReport?.windowKey || (fallbackIsStale ? null : (fallbackCrowdReporting.latestWindowKey || null))
       }
     };
   }));
@@ -1032,7 +1043,8 @@ async function getUserNotifications(userId, options = {}) {
       constraints.push(where("read", "==", false));
     }
 
-    constraints.push(orderBy("createdAt", "desc"), limit(limitCount));
+    // Avoid composite index requirement; results are sorted client-side in normalizeNotificationList.
+    constraints.push(limit(limitCount));
 
     const snapshot = await getDocs(query(notificationsRef, ...constraints));
     return snapshot.docs.map((notificationDoc) => ({ id: notificationDoc.id, ...notificationDoc.data() }));
@@ -1073,12 +1085,13 @@ async function getCrowdHistory(parkId, days = 7) {
   try {
     const db = getDatabaseService();
     const crowdReportsRef = getCrowdReportsCollection(db);
-    // Requires a composite Firestore index on (parkId ASC, reportedAt ASC).
     const earliestISO = `${earliestDateKey}T00:00:00.000Z`;
-    const snapshot = await getDocs(query(crowdReportsRef, where("parkId", "==", parkId), where("reportedAt", ">=", earliestISO)));
+    // Query by parkId only (no compound index required), then filter by date client-side.
+    const snapshot = await getDocs(query(crowdReportsRef, where("parkId", "==", parkId)));
 
     const reports = snapshot.docs
-      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }));
+      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }))
+      .filter((report) => (report.reportedAt || "") >= earliestISO);
 
     const grouped = new Map();
     reports.forEach((report) => {
@@ -1678,6 +1691,20 @@ async function moderateUser(targetUserId, action, moderatorId) {
   }
 }
 
+async function getRecordById(collectionName, recordId) {
+  try {
+    const db = getDatabaseService();
+    const recordRef = doc(db, collectionName, recordId);
+    const snapshot = await getDoc(recordRef);
+    if (!snapshot.exists()) {
+      throw new Error(`No ${collectionName} record found with ID: ${recordId}`);
+    }
+    return { id: snapshot.id, ...snapshot.data() };
+  } catch (error) {
+    throw createServiceError(error, `Get ${collectionName} record by ID failed.`);
+  }
+}
+
 export {
   createRecord,
   createUserRecord,
@@ -1717,5 +1744,6 @@ export {
   deleteEquipment,
   getUserNotifications,
   markNotificationRead,
-  getCrowdHistory
+  getCrowdHistory,
+  getRecordById
 };

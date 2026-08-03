@@ -13,7 +13,8 @@ import {
   EQUIPMENT_STATUSES,
   EQUIPMENT_STATUS_LABELS,
   SAFETY_REPORT_STATUSES,
-  SAFETY_REPORT_TRANSITIONS
+  SAFETY_REPORT_TRANSITIONS,
+  CROWD_REPORT_POLICY
 } from "../constants/reportConstants.js";
 import {
   addFavorite,
@@ -46,7 +47,8 @@ import {
   submitParkPhoto,
   updateEquipmentStatus,
   updateRecord,
-  updateSafetyReportStatus
+  updateSafetyReportStatus,
+  getRecordById
 } from "../services/databaseService.js";
 import { subscribeToUserNotifications } from "../services/notificationService.js";
 import {
@@ -132,6 +134,7 @@ const appState = {
   // Sprint 3 Workstream 4: map and crowd history.
   crowdHistory: [],
   crowdHistoryError: null,
+  crowdHistoryStaleRefreshPending: false,
   mapMode: false,
   mapInstance: null,
   mapMarkersLayer: null,
@@ -435,8 +438,14 @@ function getParkCoordinates(park) {
     return null;
   }
 
-  const lat = Number(park.latitude ?? park.lat);
-  const lng = Number(park.longitude ?? park.lng ?? park.lon);
+  // Support flat top-level fields (latitude/longitude), legacy aliases (lat/lng/lon),
+  // and the nested { coordinates: { lat, lng } } format used by seed data and earlier park records.
+  const lat = Number(
+    park.latitude ?? park.lat ?? park.coordinates?.lat ?? park.coordinates?.latitude
+  );
+  const lng = Number(
+    park.longitude ?? park.lng ?? park.lon ?? park.coordinates?.lng ?? park.coordinates?.longitude ?? park.coordinates?.lon
+  );
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return null;
@@ -499,6 +508,28 @@ function clearCommunityFeedback() {
   appState.photoSuccess = null;
 }
 
+function showWelcomePopup(user) {
+  const overlayContainer = document.getElementById("welcome-popup-overlay");
+  if (!overlayContainer) {
+    return;
+  }
+
+  const displayName = user?.displayName || user?.email || "User";
+  overlayContainer.innerHTML = `
+    <div class="welcome-popup-overlay" id="welcome-popup-inner">
+      <div class="welcome-popup">
+        <h2>Welcome, ${escapeHtml(displayName)}!</h2>
+        <p>You are now signed in to Playground Pulse.</p>
+      </div>
+    </div>
+  `;
+
+  // Remove the popup from the DOM after the animation completes (2.5 seconds).
+  setTimeout(() => {
+    overlayContainer.innerHTML = "";
+  }, 2600);
+}
+
 function updateCrowdReportLevel(level) {
   appState.crowdReportLevel = String(level || "1");
   appState.crowdReportError = null;
@@ -522,18 +553,28 @@ async function loadCrowdReportStateForPark(parkId) {
   const fallbackBusyLevel = park.busyLevel || {};
   const fallbackCrowdReporting = park.crowdReporting || {};
 
+  // Treat persisted busyLevel data as stale if it is older than the calculation window.
+  // This prevents a weeks-old cached score from being displayed as current.
+  const staleThresholdMs = CROWD_REPORT_POLICY.windowMinutes * 60 * 1000;
+  const fallbackUpdatedMs = fallbackBusyLevel.updatedAt
+    ? new Date(fallbackBusyLevel.updatedAt).getTime()
+    : 0;
+  const fallbackIsStale = (Date.now() - fallbackUpdatedMs) > staleThresholdMs;
+
   const enrichedPark = {
     ...park,
     busyLevel: {
-      score: busyLevel.score ?? fallbackBusyLevel.score ?? null,
-      label: busyLevel.score !== null ? busyLevel.label : (fallbackBusyLevel.label || "Unknown"),
-      updatedAt: latestReport?.reportedAt || fallbackBusyLevel.updatedAt || null
+      score: busyLevel.score ?? (fallbackIsStale ? null : (fallbackBusyLevel.score ?? null)),
+      label: busyLevel.score !== null
+        ? busyLevel.label
+        : (fallbackIsStale ? "Unknown" : (fallbackBusyLevel.label || "Unknown")),
+      updatedAt: latestReport?.reportedAt || (fallbackIsStale ? null : (fallbackBusyLevel.updatedAt || null))
     },
     crowdReporting: {
       enabled: true,
-      reportCountLastHour: recentReports.length ? busyLevel.reportCount : Number(fallbackCrowdReporting.reportCountLastHour || 0),
-      lastReportedAt: latestReport?.reportedAt || fallbackCrowdReporting.lastReportedAt || null,
-      latestWindowKey: latestReport?.windowKey || fallbackCrowdReporting.latestWindowKey || null
+      reportCountLastHour: recentReports.length ? busyLevel.reportCount : (fallbackIsStale ? 0 : Number(fallbackCrowdReporting.reportCountLastHour || 0)),
+      lastReportedAt: latestReport?.reportedAt || (fallbackIsStale ? null : (fallbackCrowdReporting.lastReportedAt || null)),
+      latestWindowKey: latestReport?.windowKey || (fallbackIsStale ? null : (fallbackCrowdReporting.latestWindowKey || null))
     }
   };
 
@@ -717,7 +758,7 @@ function renderCrowdReportPanel() {
         <h3>Report Crowd Level</h3>
         <div class="crowd-report-busy-summary">
           ${renderBusyLevelBadge(busyLevel)}
-          <p class="crowd-report-meta">${reportCount} report(s) in the last hour</p>
+          <p class="crowd-report-meta">${reportCount} report(s) in the last 2.5 hrs</p>
           <p class="crowd-report-meta">Last update: ${escapeHtml(formatDisplayDateTime(lastReportedAt))}</p>
         </div>
       </div>
@@ -967,27 +1008,63 @@ function renderCrowdHistoryPanel() {
     return;
   }
 
+  // Auto-refresh if the date range no longer ends on today (UTC).
+  const todayUTC = new Date().toISOString().slice(0, 10);
+  const lastHistoryDate = appState.crowdHistory.length > 0
+    ? appState.crowdHistory[appState.crowdHistory.length - 1]?.date
+    : null;
+  const rangeIsStale = lastHistoryDate !== null && lastHistoryDate < todayUTC;
+
+  if (rangeIsStale && !appState.crowdHistoryStaleRefreshPending) {
+    appState.crowdHistoryStaleRefreshPending = true;
+    loadCrowdHistoryForSelectedPark()
+      .then(() => {
+        appState.crowdHistoryStaleRefreshPending = false;
+        renderCrowdHistoryPanel();
+      })
+      .catch(() => {
+        appState.crowdHistoryStaleRefreshPending = false;
+      });
+    // Fall through to render current (stale) state while refresh is in flight.
+  }
+
   const maxCount = appState.crowdHistory.reduce((max, item) => Math.max(max, Number(item.reportCount || 0)), 0);
 
   container.innerHTML = `
     <section class="crowd-history-panel card">
-      <h3>7-Day Crowd Trend</h3>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+        <h3 style="margin: 0;">7-Day Crowd Trend</h3>
+        <button class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.25rem 0.7rem;"
+          onclick="window.appControllerExports.refreshCrowdHistory()"
+          ${appState.crowdHistoryStaleRefreshPending ? "disabled" : ""}>
+          ${appState.crowdHistoryStaleRefreshPending ? "Refreshing…" : "↻ Refresh"}
+        </button>
+      </div>
       ${appState.crowdHistoryError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.crowdHistoryError)}</p>` : ""}
       ${appState.crowdHistory.length === 0 ? "<p>No crowd history is available yet for this park.</p>" : `
         <div class="crowd-history-bars">
           ${appState.crowdHistory.map((day) => {
             const count = Number(day.reportCount || 0);
             const percent = maxCount > 0 ? Math.max(8, Math.round((count / maxCount) * 100)) : 8;
+            const barColor = count > 0 ? getBusyLevelMapColor(day.label) : "#cdd8e3";
+            const labelText = count > 0 ? day.label : "No data";
             return `
               <div class="crowd-history-day">
                 <div class="crowd-history-bar-wrap">
-                  <div class="crowd-history-bar" style="height: ${percent}%;" title="${count} report(s)"></div>
+                  <div class="crowd-history-bar" style="height: ${percent}%; background-color: ${barColor};" title="${count} report(s) — ${labelText}"></div>
                 </div>
                 <strong>${count}</strong>
                 <span class="crowd-history-date">${escapeHtml(formatShortDate(day.date))}</span>
               </div>
             `;
           }).join("")}
+        </div>
+        <div style="margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.6rem; font-size: 0.8rem;">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#2e7d32;margin-right:4px;"></span>Low</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f57f17;margin-right:4px;"></span>Moderate</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e65100;margin-right:4px;"></span>Busy</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c62828;margin-right:4px;"></span>Very Busy</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#cdd8e3;margin-right:4px;"></span>No data</span>
         </div>
       `}
     </section>
@@ -1262,6 +1339,8 @@ function renderAdminRoleVisibility() {
     if (moderationPanel) moderationPanel.style.display = "block";
     if (userModerationSection) userModerationSection.style.display = "block";
     if (auditPanel) auditPanel.style.display = "block";
+    const lookupPanel = document.getElementById("admin-lookup-panel");
+    if (lookupPanel) lookupPanel.style.display = "block";
     return;
   }
 
@@ -1269,6 +1348,8 @@ function renderAdminRoleVisibility() {
   if (moderationPanel) moderationPanel.style.display = "block";
   if (userModerationSection) userModerationSection.style.display = "none";
   if (auditPanel) auditPanel.style.display = "none";
+  const lookupPanel = document.getElementById("admin-lookup-panel");
+  if (lookupPanel) lookupPanel.style.display = "none";
 }
 
 function renderAuditLogResults() {
@@ -1416,12 +1497,144 @@ async function handleLoadAuditLogFromForm(event) {
   }
 }
 
+async function handleAdminLookupFromForm(event) {
+  event.preventDefault();
+
+  const collectionName = (document.getElementById("admin-lookup-type")?.value || "parks").trim();
+  const searchTerm = (document.getElementById("admin-lookup-search")?.value || "").toLowerCase().trim();
+  const resultContainer = document.getElementById("admin-lookup-result");
+
+  if (!resultContainer) {
+    return;
+  }
+
+  resultContainer.innerHTML = `<p>Loading ${escapeHtml(collectionName)}...</p>`;
+
+  try {
+    let records = await readRecords(collectionName, {});
+
+    // Client-side filter by human-readable fields.
+    if (searchTerm) {
+      records = records.filter((record) => {
+        if (collectionName === "parks") {
+          return (record.name || "").toLowerCase().includes(searchTerm) ||
+                 (record.location || "").toLowerCase().includes(searchTerm);
+        }
+
+        if (collectionName === "users") {
+          return (record.displayName || "").toLowerCase().includes(searchTerm) ||
+                 (record.email || "").toLowerCase().includes(searchTerm) ||
+                 (record.role || "").toLowerCase().includes(searchTerm);
+        }
+
+        if (collectionName === "reviews") {
+          return (record.body || "").toLowerCase().includes(searchTerm) ||
+                 (record.parkId || "").toLowerCase().includes(searchTerm) ||
+                 String(record.rating || "").includes(searchTerm);
+        }
+
+        return true;
+      });
+    }
+
+    if (records.length === 0) {
+      resultContainer.innerHTML = `<p>No ${escapeHtml(collectionName)} records found${searchTerm ? ` matching "${escapeHtml(searchTerm)}"` : ""}.</p>`;
+      return;
+    }
+
+    let tableHTML = "";
+
+    if (collectionName === "parks") {
+      tableHTML = `
+        <table class="admin-lookup-table">
+          <thead>
+            <tr>
+              <th>Park Name</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Park ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${records.map((r) => `
+              <tr>
+                <td><strong>${escapeHtml(r.name || "—")}</strong></td>
+                <td>${escapeHtml(r.location || "—")}</td>
+                <td>${escapeHtml(r.maintenanceStatus || "unknown")}</td>
+                <td><span class="admin-lookup-id" title="Click to select">${escapeHtml(r.id)}</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    } else if (collectionName === "users") {
+      tableHTML = `
+        <table class="admin-lookup-table">
+          <thead>
+            <tr>
+              <th>Display Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>User ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${records.map((r) => `
+              <tr>
+                <td><strong>${escapeHtml(r.displayName || "—")}</strong></td>
+                <td>${escapeHtml(r.email || "—")}</td>
+                <td>${escapeHtml(r.role || "—")}</td>
+                <td><span class="admin-lookup-id" title="Click to select">${escapeHtml(r.id)}</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    } else if (collectionName === "reviews") {
+      tableHTML = `
+        <table class="admin-lookup-table">
+          <thead>
+            <tr>
+              <th>Rating</th>
+              <th>Comment</th>
+              <th>Park ID</th>
+              <th>Reviewer ID</th>
+              <th>Review ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${records.map((r) => `
+              <tr>
+                <td>${escapeHtml(String(r.rating || "—"))}★</td>
+                <td>${escapeHtml((r.body || "").slice(0, 60))}${(r.body || "").length > 60 ? "…" : ""}</td>
+                <td><span class="admin-lookup-id" title="Click to select">${escapeHtml(r.parkId || "—")}</span></td>
+                <td><span class="admin-lookup-id" title="Click to select">${escapeHtml(r.userId || "—")}</span></td>
+                <td><span class="admin-lookup-id" title="Click to select">${escapeHtml(r.id)}</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    resultContainer.innerHTML = `
+      <p style="font-size: 0.88rem; color: #555; margin-bottom: 0.5rem;">
+        ${records.length} record(s) found. IDs are highlighted in blue — click to select for copying.
+      </p>
+      ${tableHTML}
+    `;
+  } catch (error) {
+    resultContainer.innerHTML = `<p class="crowd-report-error">${escapeHtml(formatAppError(error, "Browse failed."))}</p>`;
+  }
+}
+
 function initializeAdminHandlers() {
   const assignForm = document.getElementById("admin-assignment-form");
   const removeButton = document.getElementById("admin-remove-assignment-btn");
   const reviewForm = document.getElementById("admin-review-moderation-form");
   const userForm = document.getElementById("admin-user-moderation-form");
   const auditForm = document.getElementById("admin-audit-filter-form");
+  const lookupForm = document.getElementById("admin-lookup-form");
 
   if (assignForm) {
     assignForm.addEventListener("submit", handleAssignParkAdminFromForm);
@@ -1443,6 +1656,10 @@ function initializeAdminHandlers() {
 
   if (auditForm) {
     auditForm.addEventListener("submit", handleLoadAuditLogFromForm);
+  }
+
+  if (lookupForm) {
+    lookupForm.addEventListener("submit", handleAdminLookupFromForm);
   }
 }
 function renderSprint3Panels() {
@@ -1697,6 +1914,23 @@ function toggleMapView() {
   renderMapPanel();
 }
 
+async function refreshCrowdHistory() {
+  if (!appState.selectedPark?.id || appState.crowdHistoryStaleRefreshPending) {
+    return;
+  }
+
+  appState.crowdHistoryStaleRefreshPending = true;
+  appState.crowdHistoryError = null;
+  renderCrowdHistoryPanel();
+
+  try {
+    await loadCrowdHistoryForSelectedPark();
+  } finally {
+    appState.crowdHistoryStaleRefreshPending = false;
+    renderCrowdHistoryPanel();
+  }
+}
+
 async function selectAdminPark(parkId) {
   appState.adminSelectedParkId = parkId;
   appState.selectedPark = parkId ? await loadCrowdReportStateForPark(parkId) : null;
@@ -1784,6 +2018,12 @@ async function handleAuthStateChanged(firebaseUser) {
     updateDashboardManagementControls();
     renderCrowdReportPanel();
     renderSprint3Panels();
+
+    // Show one-time welcome popup after fresh login/register.
+    if (firebaseUser && sessionStorage.getItem("showWelcome") === "1") {
+      sessionStorage.removeItem("showWelcome");
+      showWelcomePopup(firebaseUser);
+    }
   }
 
   if (appState.currentView === "admin") {
@@ -1995,6 +2235,8 @@ function getParkFormDataFromDom() {
   return {
     name: (document.getElementById("park-form-name")?.value || "").trim(),
     location: (document.getElementById("park-form-location")?.value || "").trim(),
+    latitude: parseFloat(document.getElementById("park-form-latitude")?.value || "") || null,
+    longitude: parseFloat(document.getElementById("park-form-longitude")?.value || "") || null,
     maintenanceStatus: document.getElementById("park-form-maintenance")?.value || "unknown",
     safetyNotes: (document.getElementById("park-form-safety-notes")?.value || "").trim(),
     amenitiesNotes: (document.getElementById("park-form-amenities-notes")?.value || "").trim(),
@@ -2267,7 +2509,7 @@ function renderParkDetail() {
         <h3>Crowd Level</h3>
         <div class="crowd-report-summary-row">
           ${renderBusyLevelBadge(park.busyLevel || {})}
-          <p>${park.crowdReporting?.reportCountLastHour || 0} report(s) in the last hour</p>
+          <p>${park.crowdReporting?.reportCountLastHour || 0} report(s) in the last 2.5 hrs</p>
         </div>
         <p class="crowd-report-meta">Last update: ${escapeHtml(formatDisplayDateTime(park.crowdReporting?.lastReportedAt || null))}</p>
       </section>
@@ -2338,6 +2580,16 @@ function renderParkForm() {
         <div class="form-group">
           <label for="park-form-location">Location</label>
           <input id="park-form-location" type="text" value="${escapeHtml(sourcePark?.location || "")}" required />
+        </div>
+        <div class="form-group form-group-inline">
+          <div>
+            <label for="park-form-latitude">Latitude (for map pin)</label>
+            <input id="park-form-latitude" type="number" step="any" value="${escapeHtml(String(sourcePark?.latitude ?? sourcePark?.coordinates?.lat ?? ""))}" placeholder="e.g. 42.3314" />
+          </div>
+          <div>
+            <label for="park-form-longitude">Longitude (for map pin)</label>
+            <input id="park-form-longitude" type="number" step="any" value="${escapeHtml(String(sourcePark?.longitude ?? sourcePark?.coordinates?.lng ?? ""))}" placeholder="e.g. -83.0458" />
+          </div>
         </div>
         <div class="form-group">
           <label for="park-form-maintenance">Maintenance Status</label>
@@ -2803,7 +3055,8 @@ function initializeApp() {
       transitionEquipmentStatus,
       deleteEquipment: deleteEquipmentHandler,
       toggleMapView,
-      selectAdminPark
+      selectAdminPark,
+      refreshCrowdHistory
     };
     
     return appState;

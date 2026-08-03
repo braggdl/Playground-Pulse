@@ -82,21 +82,21 @@ body {
 @keyframes home-ball-arc {
   0% {
     left: 46.3%;
-    top: calc(34.8% + 14px);
+    top: calc(34.8% + 20px);
     transform: translate(-50%, -50%) scale(1);
   }
 
   16% {
-    left: calc(35.8% + 50px);
-    top: calc(62.6% - 20px);
+    left: calc(35.8% + 40px);
+    top: calc(62.6% - 18px);
     transform: translate(-50%, -50%) scale(1);
   }
 
-  24% {
+  /*24% {
     left: 40.3%;
     top: 57.8%;
     transform: translate(-50%, -50%) scale(1);
-  }
+  }*/
 
   32% {
     left: 45.1%;
@@ -117,8 +117,8 @@ body {
   }
 
   56% {
-    left: calc(63.8% + 20px);
-    top: 58.5%;
+    left: calc(67.8% + 22px);
+    top: calc(55.5% - 10px);
     transform: translate(-50%, -50%) scale(1);
   }
 
@@ -142,7 +142,7 @@ body {
 
   88% {
     left: calc(35.8% + 40px);
-    top: calc(62.6% - 6px);
+    top: calc(62.6% - 18px);
     transform: translate(-50%, -50%) scale(1);
   }
 
@@ -828,6 +828,12 @@ main {
   gap: 0.5rem;
 }
 
+.form-group-inline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
 .park-form-features legend {
   font-weight: bold;
   padding: 0 0.4rem;
@@ -1320,6 +1326,90 @@ main {
   padding: 1rem;
 }
 
+/* ============================================================
+   Welcome Popup (shown once per login)
+   ============================================================ */
+
+.welcome-popup-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 20, 60, 0.6);
+  z-index: 9000;
+  animation: welcome-fade 2.5s ease forwards;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.welcome-popup {
+  background: linear-gradient(135deg, #1565c0 0%, #0277bd 50%, #00838f 100%);
+  border-radius: 22px;
+  padding: 2.8rem 4rem;
+  text-align: center;
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.18),
+    0 0 60px rgba(26, 115, 232, 0.6),
+    0 16px 64px rgba(0, 0, 0, 0.3);
+  animation: welcome-pop 2.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-popup::before {
+  content: "";
+  position: absolute;
+  top: -60%;
+  left: -60%;
+  width: 220%;
+  height: 220%;
+  background: conic-gradient(
+    transparent 0deg,
+    rgba(255, 255, 255, 0.14) 50deg,
+    transparent 110deg
+  );
+  animation: welcome-shine 1s ease 0.3s 1 forwards;
+  transform-origin: center;
+}
+
+.welcome-popup h2 {
+  margin: 0 0 0.6rem;
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
+}
+
+.welcome-popup p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1.05rem;
+}
+
+@keyframes welcome-fade {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  72%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes welcome-pop {
+  0%   { transform: scale(0.65) translateY(24px); opacity: 0; }
+  12%  { transform: scale(1.06) translateY(0);    opacity: 1; }
+  20%  { transform: scale(0.97); }
+  30%  { transform: scale(1.02); }
+  40%  { transform: scale(1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes welcome-shine {
+  0%   { transform: rotate(0deg);   opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: rotate(160deg); opacity: 0; }
+}
+
 .modal-overlay[hidden] {
   display: none;
 }
@@ -1452,6 +1542,10 @@ main {
   gap: 0.45rem;
 }
 
+.notification-section {
+  margin-bottom: 1rem;
+}
+
 .notification-panel-container {
   margin-bottom: 1rem;
 }
@@ -1582,14 +1676,48 @@ main {
 
 .crowd-history-bar {
   width: 100%;
-  background: linear-gradient(180deg, #5aa7f7 0%, #2d6fb2 100%);
+  background: #546e7a;
   border-radius: 6px 6px 0 0;
-  transition: height 0.2s ease;
+  transition: height 0.2s ease, background-color 0.2s ease;
 }
 
 .crowd-history-date {
   font-size: 0.78rem;
   color: #526273;
+}
+
+.admin-lookup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.admin-lookup-table th {
+  text-align: left;
+  background: #f0f4f8;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 2px solid #d5e2ef;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.admin-lookup-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #e9eef4;
+  word-break: break-all;
+}
+
+.admin-lookup-table tr:hover td {
+  background: #f8fbff;
+}
+
+.admin-lookup-id {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #1a73e8;
+  cursor: text;
+  user-select: all;
 }
 
 .park-map-container {

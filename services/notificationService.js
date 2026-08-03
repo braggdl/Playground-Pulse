@@ -37,7 +37,6 @@ import {
   collection,
   limit,
   onSnapshot,
-  orderBy,
   query,
   where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -118,10 +117,10 @@ function subscribeToUserNotifications(userId, onChange, onError) {
   initializeFirebaseServices();
   const { db } = getFirebaseServices();
   const notificationsRef = collection(db, "notifications");
+  // Avoid composite index requirement; results are sorted client-side in normalizeNotificationList.
   const notificationsQuery = query(
     notificationsRef,
     where("userId", "==", userId),
-    orderBy("createdAt", "desc"),
     limit(100)
   );
 

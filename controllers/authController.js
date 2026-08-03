@@ -342,6 +342,8 @@ async function handleLogin() {
 
   try {
     await login(email, password);
+    // Flag for one-time welcome popup on dashboard
+    sessionStorage.setItem("showWelcome", "1");
     // Redirect to dashboard on success
     window.location.href = "./dashboard.html";
   } catch (error) {
@@ -395,6 +397,8 @@ async function handleRegister() {
 
     await createUserRecord(firebaseUser.uid, userRecord);
 
+    // Flag for one-time welcome popup on dashboard
+    sessionStorage.setItem("showWelcome", "1");
     // Redirect to dashboard on success
     window.location.href = "./dashboard.html";
   } catch (error) {

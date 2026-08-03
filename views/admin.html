@@ -123,8 +123,7 @@
       </article>
 
       <article id="admin-audit-panel" class="card audit-log-panel" style="display: none;">
-        <h3 class="admin-panel-title">Audit Log</h3>
-        <form id="admin-audit-filter-form">
+        <h3 class="admin-panel-title">Audit Log</h3>        <form id="admin-audit-filter-form">
           <div class="form-group">
             <label for="admin-audit-park-id">Filter by Park ID</label>
             <input id="admin-audit-park-id" type="text" placeholder="park-test-001" />
@@ -149,6 +148,27 @@
         </form>
 
         <div id="admin-audit-results" class="admin-audit-results"></div>
+      </article>
+
+      <article id="admin-lookup-panel" class="card admin-panel" style="display: none;">
+        <h3 class="admin-panel-title">Browse Records &amp; IDs</h3>
+        <p style="margin-top: 0; font-size: 0.9rem; color: #555;">Find Firestore document IDs by searching platform names. Click any ID to select it for copying.</p>
+        <form id="admin-lookup-form">
+          <div class="form-group">
+            <label for="admin-lookup-type">Record Type</label>
+            <select id="admin-lookup-type">
+              <option value="parks">Parks</option>
+              <option value="users">Users</option>
+              <option value="reviews">Reviews</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="admin-lookup-search">Filter (name / email / location — optional)</label>
+            <input id="admin-lookup-search" type="text" placeholder="e.g. Riverside Park, jane@example.com" />
+          </div>
+          <button type="submit" class="btn btn-primary">Browse</button>
+        </form>
+        <div id="admin-lookup-result" style="margin-top: 1rem; overflow-x: auto;"></div>
       </article>
     </section>
 

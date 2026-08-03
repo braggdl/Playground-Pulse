@@ -58,6 +58,10 @@ function createParkModel(partialPark = {}) {
     },
     safetyNotes: partialPark.safetyNotes || "",
     amenitiesNotes: partialPark.amenitiesNotes || "",
+    // Flat coordinate fields for map marker rendering.
+    // Falls back through legacy aliases and the nested coordinates object for backwards compatibility.
+    latitude: partialPark.latitude ?? partialPark.lat ?? partialPark.coordinates?.lat ?? null,
+    longitude: partialPark.longitude ?? partialPark.lng ?? partialPark.coordinates?.lng ?? null,
     // Sprint 3 fields
     // equipment: array of equipment document IDs belonging to this park
     equipment: Array.isArray(partialPark.equipment) ? partialPark.equipment : [],
