@@ -177,6 +177,7 @@
           <button type="button" class="dashboard-park-modal-close" onclick="window.appControllerExports.closeDashboardParkModal()" aria-label="Close park details">x</button>
           <div id="park-detail-modal-container" class="park-detail-container"></div>
           <div id="crowd-report-modal-container" class="crowd-report-container"></div>
+          <div id="park-form-modal-container" class="park-form-container"></div>
         </section>
       </div>
 
@@ -217,6 +218,12 @@
       const SPAWN_INTERVAL_MS = 6000;
       const TRAIL_MAX_POINTS = 720;
       const FOLLOWER_TRAIL_GAP = 16;
+      const MOTION_BOUNDS = {
+        left: 24,
+        right: 24,
+        top: -14,
+        bottom: 24
+      };
       const butterflySprites = [
         "../development/Figma%20Files/Butterfly.svg",
         "../development/Figma%20Files/Butterfly%202.svg"
@@ -226,7 +233,12 @@
       const trailHistory = [];
 
       const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-      const getBottomMinY = () => window.innerHeight * 0.58;
+      const getMotionBounds = () => ({
+        minX: MOTION_BOUNDS.left,
+        maxX: window.innerWidth - MOTION_BOUNDS.right,
+        minY: MOTION_BOUNDS.top,
+        maxY: window.innerHeight - MOTION_BOUNDS.bottom
+      });
 
       const state = {
         x: window.innerWidth * 0.5,
@@ -307,25 +319,22 @@
       };
 
       window.addEventListener("mousemove", (event) => {
-        const minY = getBottomMinY();
-        const maxY = window.innerHeight - 24;
-        state.targetX = clamp(event.clientX, 24, window.innerWidth - 24);
-        state.targetY = clamp(event.clientY, minY, maxY);
+        const bounds = getMotionBounds();
+        state.targetX = clamp(event.clientX, bounds.minX, bounds.maxX);
+        state.targetY = clamp(event.clientY, bounds.minY, bounds.maxY);
       });
 
       window.addEventListener("resize", () => {
-        const maxX = window.innerWidth - 24;
-        const maxY = window.innerHeight - 24;
-        const minY = getBottomMinY();
+        const bounds = getMotionBounds();
 
-        state.targetX = clamp(state.targetX, 24, maxX);
-        state.targetY = clamp(state.targetY, minY, maxY);
-        state.x = clamp(state.x, 24, maxX);
-        state.y = clamp(state.y, minY, maxY);
+        state.targetX = clamp(state.targetX, bounds.minX, bounds.maxX);
+        state.targetY = clamp(state.targetY, bounds.minY, bounds.maxY);
+        state.x = clamp(state.x, bounds.minX, bounds.maxX);
+        state.y = clamp(state.y, bounds.minY, bounds.maxY);
 
         followers.forEach((follower) => {
-          follower.x = clamp(follower.x, 24, maxX);
-          follower.y = clamp(follower.y, minY, maxY);
+          follower.x = clamp(follower.x, bounds.minX, bounds.maxX);
+          follower.y = clamp(follower.y, bounds.minY, bounds.maxY);
         });
       });
 

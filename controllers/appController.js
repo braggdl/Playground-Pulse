@@ -140,6 +140,7 @@ const appState = {
   mapInstance: null,
   mapMarkersLayer: null,
   dashboardParkModalOpen: false,
+  profileFavoriteModalOpen: false,
   // Admin view state.
   adminParks: [],
   adminSelectedParkId: "",
@@ -792,6 +793,17 @@ function renderCrowdReportPanel() {
   `;
 }
 
+function ensureDashboardModalMountedToBody() {
+  if (appState.currentView !== "dashboard") {
+    return;
+  }
+
+  const modal = document.getElementById("dashboard-park-modal");
+  if (modal && modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+}
+
 function setDashboardParkModalOpen(isOpen) {
   appState.dashboardParkModalOpen = Boolean(isOpen);
 
@@ -799,9 +811,19 @@ function setDashboardParkModalOpen(isOpen) {
     return;
   }
 
+  ensureDashboardModalMountedToBody();
+
   const modal = document.getElementById("dashboard-park-modal");
   if (modal) {
     modal.setAttribute("aria-hidden", appState.dashboardParkModalOpen ? "false" : "true");
+
+    if (appState.dashboardParkModalOpen) {
+      modal.scrollTop = 0;
+      const modalContent = modal.querySelector(".dashboard-park-modal-content");
+      if (modalContent instanceof HTMLElement) {
+        modalContent.scrollTop = 0;
+      }
+    }
   }
 
   document.body.classList.toggle("dashboard-park-modal-open", appState.dashboardParkModalOpen);
@@ -831,8 +853,10 @@ function renderNotificationPanel() {
   const unreadBadge = document.getElementById("admin-notification-unread-count");
   const adminNavBadge = document.getElementById("admin-notification-count");
   const panelContainer = document.getElementById("notification-panel-container");
+  const isParentAccount = appState.userRole === USER_ROLES.PARENT;
+  const isDashboardView = appState.currentView === "dashboard";
 
-  const canShowNotifications = isAuthenticated() && (appState.currentView === "admin" || appState.currentView === "dashboard");
+  const canShowNotifications = isAuthenticated() && !isParentAccount && appState.currentView === "admin";
 
   if (toggleButton) {
     toggleButton.style.display = canShowNotifications ? "inline-flex" : "none";
@@ -850,7 +874,12 @@ function renderNotificationPanel() {
     adminNavBadge.textContent = String(appState.unreadNotificationCount);
   }
 
-  if (!panelContainer || !canShowNotifications) {
+  if (adminNavBadge && isDashboardView) {
+    adminNavBadge.style.display = "none";
+    adminNavBadge.textContent = "0";
+  }
+
+  if (!panelContainer || !canShowNotifications || isDashboardView) {
     if (panelContainer) {
       panelContainer.innerHTML = "";
     }
@@ -2440,6 +2469,11 @@ function openEditParkForm() {
     appState.parkFormRecordId = appState.selectedPark.id;
     appState.parkFormError = null;
     appState.parkFormSuccess = null;
+
+    if (appState.currentView === "dashboard" && getCurrentUserRole() === USER_ROLES.SITE_ADMIN) {
+      setDashboardParkModalOpen(true);
+    }
+
     renderParkForm();
   } catch (error) {
     appState.parkFormError = formatAppError(error, "You are not allowed to edit this park.");
@@ -2656,7 +2690,7 @@ function renderParkDetail() {
 }
 
 function renderParkForm() {
-  const formContainer = document.getElementById("park-form-container");
+  const formContainer = getDashboardTargetContainer("park-form-container", "park-form-modal-container");
   if (!formContainer) {
     return;
   }
@@ -2750,8 +2784,32 @@ function initializeViewController() {
     initializeAuthController();
   }
 
+  if (appState.currentView === "profile") {
+    const profileModal = document.getElementById("profile-favorite-park-modal");
+    if (profileModal) {
+      profileModal.addEventListener("click", (event) => {
+        if (!appState.profileFavoriteModalOpen) {
+          return;
+        }
+
+        const targetElement = event.target instanceof Element ? event.target : null;
+        const clickedInsideContent = targetElement?.closest(".profile-favorite-modal-content");
+        if (!clickedInsideContent) {
+          closeProfileFavoriteDetail();
+        }
+      });
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && appState.profileFavoriteModalOpen) {
+        closeProfileFavoriteDetail();
+      }
+    });
+  }
+
   // Phase 3: Initialize search and filter handlers for dashboard
   if (appState.currentView === "dashboard") {
+    ensureDashboardModalMountedToBody();
     const notificationToggleButton = document.getElementById("admin-notifications-toggle-btn");
     if (notificationToggleButton) {
       notificationToggleButton.addEventListener("click", toggleNotificationPanel);
@@ -2856,7 +2914,12 @@ async function renderProfileFavorites() {
 
     favoritesContainer.innerHTML = `
       <ul class="review-list">
-        ${enrichedFavorites.map((favorite) => `<li class="review-item"><strong>${escapeHtml(favorite.parkName)}</strong><p class="muted">Saved on ${escapeHtml(formatDisplayDateTime(favorite.createdAt))}</p></li>`).join("")}
+        ${enrichedFavorites.map((favorite) => `
+          <li class="review-item">
+            <button type="button" class="profile-favorite-link" onclick="window.appControllerExports.openProfileFavoriteDetail(decodeURIComponent('${encodeURIComponent(favorite.parkId)}'))"><strong>${escapeHtml(favorite.parkName)}</strong></button>
+            <p class="muted">Saved on ${escapeHtml(formatDisplayDateTime(favorite.createdAt))}</p>
+          </li>
+        `).join("")}
       </ul>
     `;
   } catch (error) {
@@ -2867,6 +2930,88 @@ async function renderProfileFavorites() {
   } finally {
     appState.favoriteLoading = false;
   }
+}
+
+function setProfileFavoriteModalOpen(isOpen) {
+  appState.profileFavoriteModalOpen = Boolean(isOpen);
+  const modal = document.getElementById("profile-favorite-park-modal");
+
+  if (modal) {
+    modal.setAttribute("aria-hidden", appState.profileFavoriteModalOpen ? "false" : "true");
+  }
+
+  document.body.classList.toggle("profile-favorite-modal-open", appState.profileFavoriteModalOpen);
+}
+
+function renderProfileFavoriteModalBody({ park = null, loading = false, errorMessage = "" } = {}) {
+  const container = document.getElementById("profile-favorite-park-modal-body");
+  if (!container) {
+    return;
+  }
+
+  if (loading) {
+    container.innerHTML = '<p class="muted">Loading park details...</p>';
+    return;
+  }
+
+  if (errorMessage) {
+    container.innerHTML = `<p class="crowd-report-error">${escapeHtml(errorMessage)}</p>`;
+    return;
+  }
+
+  if (!park) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = `
+    <section class="detail-section">
+      <h3>${escapeHtml(park.name || "Park Details")}</h3>
+      <p><strong>Location:</strong> ${escapeHtml(park.location || "Unknown")}</p>
+      <p><strong>Maintenance Status:</strong> ${escapeHtml(park.maintenanceStatus || "Unknown")}</p>
+      <p><strong>Safety Notes:</strong> ${escapeHtml(park.safetyNotes || "No safety notes available.")}</p>
+      <p><strong>Amenities:</strong> ${escapeHtml(park.amenitiesNotes || "No amenity details available.")}</p>
+    </section>
+    <section class="detail-section">
+      <h3>Age Groups & Features</h3>
+      <ul>
+        <li>Toddler: ${park.ageGroups?.toddler ? "Yes" : "No"}</li>
+        <li>Kid: ${park.ageGroups?.kid ? "Yes" : "No"}</li>
+        <li>Teen: ${park.ageGroups?.teen ? "Yes" : "No"}</li>
+        <li>Fenced Area: ${park.fencedArea ? "Yes" : "No"}</li>
+        <li>Restrooms: ${park.restrooms ? "Yes" : "No"}</li>
+        <li>Shade Available: ${park.shadeAvailable ? "Yes" : "No"}</li>
+      </ul>
+    </section>
+    <section class="detail-section">
+      <a class="btn btn-primary" href="./dashboard.html?parkId=${encodeURIComponent(park.id || "")}">Review More Details In Dashboard</a>
+    </section>
+  `;
+}
+
+async function openProfileFavoriteDetail(parkId) {
+  if (!parkId || appState.currentView !== "profile") {
+    return;
+  }
+
+  setProfileFavoriteModalOpen(true);
+  renderProfileFavoriteModalBody({ loading: true });
+
+  try {
+    const parkRecord = await getParkById(parkId);
+    const park = {
+      id: parkId,
+      ...parkRecord
+    };
+    renderProfileFavoriteModalBody({ park });
+  } catch (error) {
+    renderProfileFavoriteModalBody({ errorMessage: formatAppError(error, "Unable to load park details.") });
+  }
+}
+
+function closeProfileFavoriteDetail() {
+  setProfileFavoriteModalOpen(false);
+  renderProfileFavoriteModalBody();
 }
 
 async function loadCommunityFeaturesForSelectedPark() {
@@ -3067,22 +3212,30 @@ async function toggleFavorite(parkId) {
 }
 
 /**
- * Apply initial search term passed from home page redirect (?q=...)
+ * Apply initial dashboard state passed from URL redirect params.
+ * Supports:
+ * - ?q=... (search term)
+ * - ?parkId=... (open park detail)
  */
 function applyInitialDashboardSearchFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const initialSearchTerm = (params.get("q") || "").trim();
+  const initialParkId = (params.get("parkId") || "").trim();
 
-  if (!initialSearchTerm) {
-    return;
+  if (initialSearchTerm) {
+    const searchInput = document.getElementById("search-input");
+    if (searchInput) {
+      searchInput.value = initialSearchTerm;
+    }
+
+    updateSearchTerm(initialSearchTerm);
   }
 
-  const searchInput = document.getElementById("search-input");
-  if (searchInput) {
-    searchInput.value = initialSearchTerm;
+  if (initialParkId) {
+    selectParkForDetail(initialParkId).catch((error) => {
+      console.error("Unable to open park detail from URL parameter:", error);
+    });
   }
-
-  updateSearchTerm(initialSearchTerm);
 }
 
 /**
@@ -3179,6 +3332,8 @@ function initializeApp() {
       selectParkForDetail,
       clearParkDetail,
       closeDashboardParkModal: clearParkDetail,
+      openProfileFavoriteDetail,
+      closeProfileFavoriteDetail,
       updateSearchTerm,
       updateFilterCriteria,
       clearSearchAndFilters,
