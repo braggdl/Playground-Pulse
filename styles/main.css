@@ -1054,7 +1054,7 @@ body.dashboard-park-modal-open .dashboard-park-modal {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  overflow: hidden;
+  overflow: visible;
   z-index: 25;
 }
 

@@ -831,8 +831,10 @@ function renderNotificationPanel() {
   const unreadBadge = document.getElementById("admin-notification-unread-count");
   const adminNavBadge = document.getElementById("admin-notification-count");
   const panelContainer = document.getElementById("notification-panel-container");
+  const isParentAccount = appState.userRole === USER_ROLES.PARENT;
+  const isDashboardView = appState.currentView === "dashboard";
 
-  const canShowNotifications = isAuthenticated() && (appState.currentView === "admin" || appState.currentView === "dashboard");
+  const canShowNotifications = isAuthenticated() && !isParentAccount && appState.currentView === "admin";
 
   if (toggleButton) {
     toggleButton.style.display = canShowNotifications ? "inline-flex" : "none";
@@ -850,7 +852,12 @@ function renderNotificationPanel() {
     adminNavBadge.textContent = String(appState.unreadNotificationCount);
   }
 
-  if (!panelContainer || !canShowNotifications) {
+  if (adminNavBadge && isDashboardView) {
+    adminNavBadge.style.display = "none";
+    adminNavBadge.textContent = "0";
+  }
+
+  if (!panelContainer || !canShowNotifications || isDashboardView) {
     if (panelContainer) {
       panelContainer.innerHTML = "";
     }
