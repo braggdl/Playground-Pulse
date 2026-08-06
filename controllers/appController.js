@@ -793,6 +793,17 @@ function renderCrowdReportPanel() {
   `;
 }
 
+function ensureDashboardModalMountedToBody() {
+  if (appState.currentView !== "dashboard") {
+    return;
+  }
+
+  const modal = document.getElementById("dashboard-park-modal");
+  if (modal && modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+}
+
 function setDashboardParkModalOpen(isOpen) {
   appState.dashboardParkModalOpen = Boolean(isOpen);
 
@@ -800,9 +811,19 @@ function setDashboardParkModalOpen(isOpen) {
     return;
   }
 
+  ensureDashboardModalMountedToBody();
+
   const modal = document.getElementById("dashboard-park-modal");
   if (modal) {
     modal.setAttribute("aria-hidden", appState.dashboardParkModalOpen ? "false" : "true");
+
+    if (appState.dashboardParkModalOpen) {
+      modal.scrollTop = 0;
+      const modalContent = modal.querySelector(".dashboard-park-modal-content");
+      if (modalContent instanceof HTMLElement) {
+        modalContent.scrollTop = 0;
+      }
+    }
   }
 
   document.body.classList.toggle("dashboard-park-modal-open", appState.dashboardParkModalOpen);
@@ -2448,6 +2469,11 @@ function openEditParkForm() {
     appState.parkFormRecordId = appState.selectedPark.id;
     appState.parkFormError = null;
     appState.parkFormSuccess = null;
+
+    if (appState.currentView === "dashboard" && getCurrentUserRole() === USER_ROLES.SITE_ADMIN) {
+      setDashboardParkModalOpen(true);
+    }
+
     renderParkForm();
   } catch (error) {
     appState.parkFormError = formatAppError(error, "You are not allowed to edit this park.");
@@ -2664,7 +2690,7 @@ function renderParkDetail() {
 }
 
 function renderParkForm() {
-  const formContainer = document.getElementById("park-form-container");
+  const formContainer = getDashboardTargetContainer("park-form-container", "park-form-modal-container");
   if (!formContainer) {
     return;
   }
@@ -2783,6 +2809,7 @@ function initializeViewController() {
 
   // Phase 3: Initialize search and filter handlers for dashboard
   if (appState.currentView === "dashboard") {
+    ensureDashboardModalMountedToBody();
     const notificationToggleButton = document.getElementById("admin-notifications-toggle-btn");
     if (notificationToggleButton) {
       notificationToggleButton.addEventListener("click", toggleNotificationPanel);

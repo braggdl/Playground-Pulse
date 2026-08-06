@@ -24,24 +24,22 @@
     - Investigate Leaflet vs Google Maps, including Google Maps API and billing requirements.
 
 - Crowd and Analytics
-    - 7-Day Crowd Trend date range is currently dependent on last report. Update to a rolling 7-day window with current day centered.
+    + 7-Day Crowd Trend date range is currently dependent on last report. Update to a rolling 7-day window with current day centered.
+    + Correct 7-Day Crowd Trend not present on Park screen
     - Determine how 7-Day Crowd Trend should report trend direction, not only a snapshot.
-    - Report times are in UTC, not local time. Add a general conversion function for broad use.
+    + Report times are in UTC, not local time. Add a general conversion function for broad use for local time of user. 
     - Consider replacing the simple bar chart with a chart library for crowd visualization.
 
 - Reviews and Data Aggregation
     - AI: Suggested fix is incremental update using existing reviewAggregate (count + sum) instead of full re-fetch, or use Firestore aggregation query.
 
 - Admin UI and Invitation Lifecycle
-    - Full Phase 2 Workstream 1 Admin UI implementation exists via AI. May need to coalesce with Workstream 2 into a uniform UI/page.
     - AI: Add invite lifecycle management: pending, revoked, expired, and accepted states in admin UI.
+    + Instead of each item like Add Equipment, Submit Review, and Submit Crowd Report having their full boxes opened by default when viewing a Park, only have the buttons placed under Actions, next to Edit Park, for instance, and when the buttons are pressed, a new window opens with full context for that action. These windows have the same content as the boxes as they exist now, but in their own new popup. 
 
 - Home Page UI and Navigation Wiring
     - Top buttons on Home page are not yet wired.
     - Need button images so they can be used as final button assets.
-
-- Notifications and Dashboard Polish
-    - Notifications button is still visible on Dashboard page.
 
 - Deployment and Distribution
     - Host website on Firebase Hosting and adjust public directory layout via firebase.json.
