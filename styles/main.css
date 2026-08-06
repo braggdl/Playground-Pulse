@@ -2212,6 +2212,192 @@ main {
   font-size: 0.9rem;
 }
 
+.about-container {
+  max-width: 1120px;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.about-hero {
+  padding: 1.8rem;
+  background:
+    radial-gradient(circle at top right, rgba(255, 215, 106, 0.28), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(244, 251, 255, 0.94) 100%);
+}
+
+.about-hero h2 {
+  margin: 0.35rem 0 0.75rem;
+  max-width: clamp(16ch, 72vw, 26ch);
+  font-size: clamp(1.55rem, 1.1rem + 2vw, 2.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.about-hero-copy,
+.about-copy-card p,
+.about-feature-card p,
+.about-workflow-card p,
+.about-retrospective-card p,
+.about-lesson-card p,
+.about-roadmap-card p,
+.about-footer p {
+  margin: 0;
+  color: var(--pp-ink-700);
+  line-height: 1.7;
+}
+
+.about-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.2rem;
+}
+
+.about-meta-row p {
+  margin: 0;
+  padding: 0.65rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(57, 116, 147, 0.14);
+  color: var(--pp-ink-900);
+  font-size: 0.95rem;
+}
+
+.about-jump-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+}
+
+.about-jump-nav a {
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  background: rgba(227, 244, 255, 0.84);
+  color: var(--pp-sky-700);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.about-jump-nav a:hover {
+  background: rgba(200, 232, 251, 0.96);
+}
+
+.about-section {
+  display: grid;
+  gap: 1rem;
+  scroll-margin-top: 8.5rem;
+}
+
+.about-section-intro {
+  margin-bottom: 0;
+}
+
+.about-overview-grid,
+.about-feature-grid,
+.about-retrospective-grid,
+.about-lessons-grid,
+.about-roadmap-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.about-overview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.about-feature-grid,
+.about-retrospective-grid,
+.about-roadmap-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.about-lessons-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.about-copy-card,
+.about-feature-card,
+.about-workflow-card,
+.about-retrospective-card,
+.about-lesson-card,
+.about-roadmap-card,
+.about-footer {
+  padding: 1.35rem 1.45rem;
+}
+
+.about-copy-card,
+.about-feature-card,
+.about-retrospective-card,
+.about-lesson-card,
+.about-roadmap-card {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.about-copy-card h3,
+.about-feature-card h3,
+.about-workflow-card h3,
+.about-retrospective-card h3,
+.about-lesson-card h3,
+.about-roadmap-card h3,
+.about-footer h2 {
+  margin: 0;
+}
+
+.about-feature-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(245, 251, 255, 0.98) 100%);
+}
+
+.about-workflow-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.about-workflow-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.45rem 1.5rem;
+}
+
+.about-workflow-heading {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.about-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.about-workflow-grid section {
+  padding: 1rem;
+  border-radius: var(--pp-radius-md);
+  background: rgba(245, 251, 255, 0.9);
+  border: 1px solid rgba(57, 116, 147, 0.12);
+}
+
+.about-workflow-grid h4,
+.about-roadmap-label {
+  margin: 0 0 0.45rem;
+  color: var(--pp-sky-700);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.about-roadmap-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 252, 255, 0.98) 100%),
+    rgba(255, 255, 255, 0.96);
+}
+
+.about-footer {
+  background: linear-gradient(135deg, rgba(227, 244, 255, 0.95), rgba(255, 255, 255, 0.98));
+}
+
 .search-filter-section {
   padding: 1.4rem;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(244, 251, 255, 0.96) 100%);
@@ -2283,6 +2469,42 @@ main {
 
   .page-intro {
     padding: 1.1rem 1rem;
+  }
+
+  .about-hero,
+  .about-copy-card,
+  .about-feature-card,
+  .about-workflow-card,
+  .about-retrospective-card,
+  .about-lesson-card,
+  .about-roadmap-card,
+  .about-footer {
+    padding: 1.1rem 1rem;
+  }
+
+  .about-overview-grid,
+  .about-feature-grid,
+  .about-workflow-grid,
+  .about-retrospective-grid,
+  .about-roadmap-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .about-jump-nav {
+    padding: 0.9rem;
+  }
+
+  .about-jump-nav a {
+    width: 100%;
+    text-align: center;
+  }
+
+  .about-meta-row {
+    flex-direction: column;
+  }
+
+  .about-hero h2 {
+    max-width: none;
   }
 
   main {
