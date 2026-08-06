@@ -24,6 +24,15 @@
   </style>
 </head>
 <body class="protected-pending app-shell-page dashboard-page">
+  <div class="dashboard-cloud-layer" aria-hidden="true">
+    <img class="dashboard-cloud cloud-a" src="../development/Figma%20Files/Cloud.svg" alt="" />
+    <img class="dashboard-cloud cloud-b" src="../development/Figma%20Files/Cloud.svg" alt="" />
+    <img class="dashboard-cloud cloud-c" src="../development/Figma%20Files/Cloud.svg" alt="" />
+    <img class="dashboard-cloud cloud-d" src="../development/Figma%20Files/Cloud.svg" alt="" />
+    <img class="dashboard-cloud cloud-e" src="../development/Figma%20Files/Cloud.svg" alt="" />
+    <img class="dashboard-cloud cloud-f" src="../development/Figma%20Files/Cloud.svg" alt="" />
+  </div>
+
   <header class="app-header">
     <h1>Playground Pulse Dashboard</h1>
     <nav class="app-nav">
@@ -161,8 +170,25 @@
         </div>
       </div>
 
+      <div id="dashboard-park-modal" class="dashboard-park-modal" aria-hidden="true">
+        <div class="dashboard-park-modal-backdrop" onclick="window.appControllerExports.closeDashboardParkModal()"></div>
+        <section class="dashboard-park-modal-content" role="dialog" aria-modal="true" aria-label="Park details">
+          <button type="button" class="dashboard-park-modal-close" onclick="window.appControllerExports.closeDashboardParkModal()" aria-label="Close park details">x</button>
+          <div id="park-detail-modal-container" class="park-detail-container"></div>
+          <div id="crowd-report-modal-container" class="crowd-report-container"></div>
+        </section>
+      </div>
+
     </section>
   </main>
+
+  <section class="dashboard-trees-footer" aria-hidden="true">
+    <img src="../development/Figma%20Files/Trees%20only.svg" alt="" />
+  </section>
+
+  <div class="dashboard-butterfly-layer" aria-hidden="true">
+    <img id="dashboard-butterfly" src="../development/Figma%20Files/Butterfly.svg" alt="" />
+  </div>
 
   <script type="module">
     import { initializeApp } from "../controllers/appController.js";
@@ -176,6 +202,138 @@
     if (logoutBtn) {
       logoutBtn.addEventListener("click", handleLogout);
     }
+
+    const butterfly = document.getElementById("dashboard-butterfly");
+    const butterflyLayer = document.querySelector(".dashboard-butterfly-layer");
+
+    function initButterflyFollower() {
+      if (!butterfly || !butterflyLayer) {
+        return;
+      }
+
+      const MAX_BUTTERFLIES = 6;
+      const MAX_FOLLOWERS = MAX_BUTTERFLIES - 1;
+      const SPAWN_INTERVAL_MS = 6000;
+      const TRAIL_MAX_POINTS = 720;
+      const FOLLOWER_TRAIL_GAP = 16;
+      const butterflySprites = [
+        "../development/Figma%20Files/Butterfly.svg",
+        "../development/Figma%20Files/Butterfly%202.svg"
+      ];
+
+      const followers = [];
+      const trailHistory = [];
+
+      const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+      const getBottomMinY = () => window.innerHeight * 0.58;
+
+      const state = {
+        x: window.innerWidth * 0.5,
+        y: window.innerHeight - 80,
+        targetX: window.innerWidth * 0.5,
+        targetY: window.innerHeight - 80,
+        lastTrailTime: 0
+      };
+
+      function spawnFollower() {
+        if (followers.length >= MAX_FOLLOWERS) {
+          return;
+        }
+
+        const follower = document.createElement("img");
+        follower.className = "dashboard-butterfly-follower";
+        follower.src = butterflySprites[(followers.length + 1) % butterflySprites.length];
+        follower.alt = "";
+
+        const scale = 0.8 + Math.random() * 0.28;
+        follower.style.setProperty("--butterfly-scale", String(scale));
+
+        const followerState = {
+          el: follower,
+          x: state.x - 14 * (followers.length + 1),
+          y: state.y + 10,
+          angle: 0
+        };
+
+        followers.push(followerState);
+        butterflyLayer.appendChild(follower);
+      }
+
+      const render = () => {
+        const dx = state.targetX - state.x;
+        const dy = state.targetY - state.y;
+        state.x += dx * 0.14;
+        state.y += dy * 0.14;
+
+        trailHistory.unshift({ x: state.x, y: state.y });
+        if (trailHistory.length > TRAIL_MAX_POINTS) {
+          trailHistory.length = TRAIL_MAX_POINTS;
+        }
+
+        const angle = Math.max(-22, Math.min(22, dx * 0.12));
+        butterfly.style.transform = `translate3d(${state.x}px, ${state.y}px, 0) rotate(${angle}deg)`;
+
+        followers.forEach((follower, index) => {
+          const trailIndex = Math.min(trailHistory.length - 1, (index + 1) * FOLLOWER_TRAIL_GAP);
+          const target = trailHistory[trailIndex] || { x: state.x, y: state.y };
+          const fdx = target.x - follower.x;
+          const fdy = target.y - follower.y;
+
+          follower.x += fdx * 0.13;
+          follower.y += fdy * 0.13;
+          follower.angle = Math.max(-26, Math.min(26, fdx * 0.14));
+          follower.el.style.transform = `translate3d(${follower.x}px, ${follower.y}px, 0) rotate(${follower.angle}deg) scale(var(--butterfly-scale))`;
+        });
+
+        const now = performance.now();
+        if (now - state.lastTrailTime > 35) {
+          spawnTrail(state.x, state.y);
+          state.lastTrailTime = now;
+        }
+
+        requestAnimationFrame(render);
+      };
+
+      const spawnTrail = (x, y) => {
+        const dot = document.createElement("span");
+        dot.className = "butterfly-trail-dot";
+        dot.style.left = `${x}px`;
+        dot.style.top = `${y}px`;
+        butterflyLayer.appendChild(dot);
+        dot.addEventListener("animationend", () => {
+          dot.remove();
+        }, { once: true });
+      };
+
+      window.addEventListener("mousemove", (event) => {
+        const minY = getBottomMinY();
+        const maxY = window.innerHeight - 24;
+        state.targetX = clamp(event.clientX, 24, window.innerWidth - 24);
+        state.targetY = clamp(event.clientY, minY, maxY);
+      });
+
+      window.addEventListener("resize", () => {
+        const maxX = window.innerWidth - 24;
+        const maxY = window.innerHeight - 24;
+        const minY = getBottomMinY();
+
+        state.targetX = clamp(state.targetX, 24, maxX);
+        state.targetY = clamp(state.targetY, minY, maxY);
+        state.x = clamp(state.x, 24, maxX);
+        state.y = clamp(state.y, minY, maxY);
+
+        followers.forEach((follower) => {
+          follower.x = clamp(follower.x, 24, maxX);
+          follower.y = clamp(follower.y, minY, maxY);
+        });
+      });
+
+      butterfly.style.transform = `translate3d(${state.x}px, ${state.y}px, 0)`;
+      window.setInterval(spawnFollower, SPAWN_INTERVAL_MS);
+      requestAnimationFrame(render);
+    }
+
+    initButterflyFollower();
   </script>
 </body>
 </html>

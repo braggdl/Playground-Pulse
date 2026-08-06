@@ -139,6 +139,7 @@ const appState = {
   mapMode: false,
   mapInstance: null,
   mapMarkersLayer: null,
+  dashboardParkModalOpen: false,
   // Admin view state.
   adminParks: [],
   adminSelectedParkId: "",
@@ -737,7 +738,7 @@ async function startNotificationsSubscription() {
 }
 
 function renderCrowdReportPanel() {
-  const reportContainer = document.getElementById("crowd-report-container");
+  const reportContainer = getDashboardTargetContainer("crowd-report-container", "crowd-report-modal-container");
   if (!reportContainer) {
     return;
   }
@@ -789,6 +790,40 @@ function renderCrowdReportPanel() {
       </form>
     </section>
   `;
+}
+
+function setDashboardParkModalOpen(isOpen) {
+  appState.dashboardParkModalOpen = Boolean(isOpen);
+
+  if (appState.currentView !== "dashboard") {
+    return;
+  }
+
+  const modal = document.getElementById("dashboard-park-modal");
+  if (modal) {
+    modal.setAttribute("aria-hidden", appState.dashboardParkModalOpen ? "false" : "true");
+  }
+
+  document.body.classList.toggle("dashboard-park-modal-open", appState.dashboardParkModalOpen);
+}
+
+function getDashboardTargetContainer(defaultContainerId, modalContainerId) {
+  const defaultContainer = document.getElementById(defaultContainerId);
+  const modalContainer = document.getElementById(modalContainerId);
+  const shouldUseModal = appState.currentView === "dashboard" && appState.dashboardParkModalOpen && Boolean(modalContainer);
+
+  if (shouldUseModal) {
+    if (defaultContainer) {
+      defaultContainer.innerHTML = "";
+    }
+    return modalContainer;
+  }
+
+  if (modalContainer) {
+    modalContainer.innerHTML = "";
+  }
+
+  return defaultContainer;
 }
 
 function renderNotificationPanel() {
@@ -934,7 +969,7 @@ function renderSafetyReportPanel() {
 }
 
 function renderEquipmentPanel() {
-  const container = document.getElementById("equipment-panel-container");
+  const container = getDashboardTargetContainer("equipment-panel-container", "equipment-panel-modal-container");
   if (!container) {
     return;
   }
@@ -2233,6 +2268,7 @@ async function selectParkForDetail(parkId) {
     appState.adminPanelError = null;
     await loadSprint3DetailData();
     await loadCommunityFeaturesForSelectedPark();
+    setDashboardParkModalOpen(true);
     syncParkResultsWithSelectedPark(appState.selectedPark);
     renderParkResults();
     renderParkDetail();
@@ -2251,6 +2287,7 @@ async function selectParkForDetail(parkId) {
  * Clear selected park (back to list)
  */
 function clearParkDetail() {
+  setDashboardParkModalOpen(false);
   appState.selectedPark = null;
   appState.reviews = [];
   appState.favoriteParks = [];
@@ -2545,7 +2582,7 @@ function renderParkResults() {
  * Render park detail view
  */
 function renderParkDetail() {
-  const detailContainer = document.getElementById("park-detail-container");
+  const detailContainer = getDashboardTargetContainer("park-detail-container", "park-detail-modal-container");
   if (!detailContainer) return;
 
   if (!appState.selectedPark) {
@@ -2595,6 +2632,8 @@ function renderParkDetail() {
           <li>Shade Available: ${park.shadeAvailable ? '✓ Yes' : '✗ No'}</li>
         </ul>
       </section>
+
+      <div id="equipment-panel-modal-container" class="equipment-panel-container"></div>
 
       <section class="detail-section card">
         <div class="detail-section-header">
@@ -2717,6 +2756,31 @@ function initializeViewController() {
     if (notificationToggleButton) {
       notificationToggleButton.addEventListener("click", toggleNotificationPanel);
     }
+    const dashboardModal = document.getElementById("dashboard-park-modal");
+    if (dashboardModal) {
+      dashboardModal.addEventListener("click", (event) => {
+        if (!appState.dashboardParkModalOpen) {
+          return;
+        }
+
+        const targetElement = event.target instanceof Element ? event.target : null;
+        const clickedInsideContent = targetElement?.closest(".dashboard-park-modal-content");
+        if (!clickedInsideContent) {
+          clearParkDetail();
+        }
+      });
+    }
+    document.addEventListener("mousedown", (event) => {
+      if (!appState.dashboardParkModalOpen) {
+        return;
+      }
+
+      const targetElement = event.target instanceof Element ? event.target : null;
+      const clickedInsideContent = targetElement?.closest(".dashboard-park-modal-content");
+      if (!clickedInsideContent) {
+        clearParkDetail();
+      }
+    }, true);
     initializeParkSearchAndFilter();
     applyInitialDashboardSearchFromUrl();
     renderCrowdReportPanel();
@@ -2724,6 +2788,11 @@ function initializeViewController() {
     renderEquipmentPanel();
     renderCrowdHistoryPanel();
     renderMapPanel();
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && appState.dashboardParkModalOpen) {
+        clearParkDetail();
+      }
+    });
   }
 
   if (appState.currentView === "admin") {
@@ -2743,20 +2812,31 @@ function initializeViewController() {
 
 async function renderProfileFavorites() {
   const favoritesContainer = document.getElementById("profile-favorites-container");
+  const favoritesCount = document.getElementById("profile-favorites-count");
   if (!favoritesContainer) {
     return;
   }
 
   if (!isAuthenticated()) {
+    if (favoritesCount) {
+      favoritesCount.textContent = "Sign in to see your favorite parks count.";
+    }
     favoritesContainer.innerHTML = '<p class="muted">Sign in to see your saved parks.</p>';
     return;
   }
 
   try {
     appState.favoriteLoading = true;
+    if (favoritesCount) {
+      favoritesCount.textContent = "Loading favorites count...";
+    }
     favoritesContainer.innerHTML = '<p class="muted">Loading favorites...</p>';
     const favorites = await getFavorites(appState.currentUser.uid);
     appState.favoriteParks = favorites;
+
+    if (favoritesCount) {
+      favoritesCount.textContent = `You have ${favorites.length} favorite park${favorites.length === 1 ? "" : "s"}.`;
+    }
 
     if (!favorites.length) {
       favoritesContainer.innerHTML = '<p class="muted">No saved favorites yet.</p>';
@@ -2780,6 +2860,9 @@ async function renderProfileFavorites() {
       </ul>
     `;
   } catch (error) {
+    if (favoritesCount) {
+      favoritesCount.textContent = "Unable to load favorites count.";
+    }
     favoritesContainer.innerHTML = `<p class="crowd-report-error">${escapeHtml(formatAppError(error, "Unable to load favorites."))}</p>`;
   } finally {
     appState.favoriteLoading = false;
@@ -3095,6 +3178,7 @@ function initializeApp() {
     window.appControllerExports = {
       selectParkForDetail,
       clearParkDetail,
+      closeDashboardParkModal: clearParkDetail,
       updateSearchTerm,
       updateFilterCriteria,
       clearSearchAndFilters,

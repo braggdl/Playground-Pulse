@@ -29,83 +29,100 @@
       <p class="page-intro-copy">Keep your family profile current, manage security, and return quickly to the parks you love most.</p>
     </section>
 
-    <section class="profile-card">
-      <h2>User Profile</h2>
+    <div class="profile-layout-grid">
+      <div class="profile-main-column">
+        <section class="profile-card">
+          <h2>User Profile</h2>
 
-      <div class="profile-field">
-        <div class="profile-header-row">
-          <label>Display Name:</label>
-          <button type="button" id="edit-display-name-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Edit</button>
-        </div>
-        <p id="profile-display-name">Loading...</p>
-        
-        <!-- Edit Display Name Form -->
-        <div id="edit-display-name-form" class="profile-edit-inline" style="display: none; margin-top: 1rem;">
-          <div class="form-group">
-            <input type="text" id="new-display-name" placeholder="Enter new display name" />
+          <div class="profile-field">
+            <div class="profile-header-row">
+              <label>Display Name:</label>
+              <button type="button" id="edit-display-name-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Edit</button>
+            </div>
+            <p id="profile-display-name">Loading...</p>
+
+            <!-- Edit Display Name Form -->
+            <div id="edit-display-name-form" class="profile-edit-inline" style="display: none; margin-top: 1rem;">
+              <div class="form-group">
+                <input type="text" id="new-display-name" placeholder="Enter new display name" />
+              </div>
+              <div id="profile-display-name-message" class="profile-message" style="display: none; margin-bottom: 1rem;"></div>
+              <div class="profile-button-group">
+                <button type="button" id="save-display-name-btn" class="btn btn-primary">Save</button>
+                <button type="button" id="cancel-display-name-btn" class="btn btn-secondary">Cancel</button>
+              </div>
+            </div>
           </div>
-          <div id="profile-display-name-message" class="profile-message" style="display: none; margin-bottom: 1rem;"></div>
-          <div class="profile-button-group">
-            <button type="button" id="save-display-name-btn" class="btn btn-primary">Save</button>
-            <button type="button" id="cancel-display-name-btn" class="btn btn-secondary">Cancel</button>
+
+          <div class="profile-field">
+            <label>Email:</label>
+            <p id="profile-email">Loading...</p>
           </div>
-        </div>
+
+          <div class="profile-field">
+            <label>Account Type:</label>
+            <p id="profile-role" class="role-badge">Loading...</p>
+          </div>
+
+          <div class="profile-field">
+            <label>Member Since:</label>
+            <p id="profile-created-at">Loading...</p>
+          </div>
+
+          <!-- Security Section -->
+          <h3>Security</h3>
+          <button type="button" id="change-password-btn" class="btn btn-primary">Change Password</button>
+
+          <!-- Change Password Form -->
+          <div id="change-password-form" class="profile-form" style="display: none; margin-top: 1.5rem;">
+            <div class="form-group">
+              <label for="current-password">Current Password:</label>
+              <input type="password" id="current-password" placeholder="Enter your current password" required />
+            </div>
+
+            <div class="form-group">
+              <label for="new-password">New Password:</label>
+              <input type="password" id="new-password" placeholder="Enter new password" required />
+              <div id="password-policy-feedback" class="password-policy-feedback" style="margin-top: 0.75rem;"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="confirm-new-password">Confirm New Password:</label>
+              <input type="password" id="confirm-new-password" placeholder="Confirm new password" required />
+            </div>
+
+            <div id="profile-password-change-message" class="profile-message" style="display: none; margin-bottom: 1rem;"></div>
+
+            <div class="profile-button-group">
+              <button type="button" id="update-password-btn" class="btn btn-primary">Update Password</button>
+              <button type="button" id="cancel-password-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <div class="profile-field">
-        <label>Email:</label>
-        <p id="profile-email">Loading...</p>
-      </div>
+      <aside class="profile-side-column">
+        <section class="profile-card profile-image-card" aria-label="Family playground photo">
+          <img
+            class="profile-side-image"
+            src="../development/Figma%20Files/Family%20Picture%20Playground%20v2.png"
+            alt="Family at a playground"
+            loading="lazy"
+          />
+        </section>
 
-      <div class="profile-field">
-        <label>Account Type:</label>
-        <p id="profile-role" class="role-badge">Loading...</p>
-      </div>
+        <section class="profile-card profile-favorites-count-card" aria-label="Favorite parks count">
+          <p id="profile-favorites-count" class="profile-favorites-count">Loading favorites count...</p>
+        </section>
 
-      <div class="profile-field">
-        <label>Member Since:</label>
-        <p id="profile-created-at">Loading...</p>
-      </div>
-    </section>
-
-    <!-- Security Section -->
-    <section class="profile-card profile-section">
-      <h3>Security</h3>
-      <button type="button" id="change-password-btn" class="btn btn-primary">Change Password</button>
-
-      <!-- Change Password Form -->
-      <div id="change-password-form" class="profile-form" style="display: none; margin-top: 1.5rem;">
-        <div class="form-group">
-          <label for="current-password">Current Password:</label>
-          <input type="password" id="current-password" placeholder="Enter your current password" required />
-        </div>
-
-        <div class="form-group">
-          <label for="new-password">New Password:</label>
-          <input type="password" id="new-password" placeholder="Enter new password" required />
-          <div id="password-policy-feedback" class="password-policy-feedback" style="margin-top: 0.75rem;"></div>
-        </div>
-
-        <div class="form-group">
-          <label for="confirm-new-password">Confirm New Password:</label>
-          <input type="password" id="confirm-new-password" placeholder="Confirm new password" required />
-        </div>
-
-        <div id="profile-password-change-message" class="profile-message" style="display: none; margin-bottom: 1rem;"></div>
-
-        <div class="profile-button-group">
-          <button type="button" id="update-password-btn" class="btn btn-primary">Update Password</button>
-          <button type="button" id="cancel-password-btn" class="btn btn-secondary">Cancel</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="profile-card profile-section">
-      <h3>Saved Favorites</h3>
-      <div id="profile-favorites-container" class="profile-favorites-container">
-        <p class="muted">Loading favorites...</p>
-      </div>
-    </section>
+        <section id="profile-favorites-section" class="profile-card profile-section">
+          <h3>Saved Favorites</h3>
+          <div id="profile-favorites-container" class="profile-favorites-container">
+            <p class="muted">Loading favorites...</p>
+          </div>
+        </section>
+      </aside>
+    </div>
   </main>
 
   <script type="module">
