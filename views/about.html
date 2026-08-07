@@ -41,45 +41,75 @@
     <section id="project-introduction" class="about-section">
       <div class="page-intro card about-section-intro">
         <p class="eyebrow">1. Project introduction</p>
-        <p class="page-intro-copy">Playground Pulse is a kid-friendly park finder built to give families better information than a general map search can provide. Instead of only showing where a park is, it helps users understand whether that park matches a child’s age, a family’s safety expectations, and the realities of current conditions.</p>
+        <h3>Our Story: The Spark Behind Playground Pulse</h3>
+        <p>The idea for <strong>Playground Pulse</strong> was born during an out-of-state family trip. We were trying to find a good playground for our son to burn off some energy, but standard mapping apps only showed us pin drops—not the actual condition of the parks. When we finally arrived at a location, we faced broken swings, closed restrooms, or overwhelming crowds.</p>
+        <p>We all know how disappointed kids get when you promise a trip to the park and it doesn't have what they were expecting! We wished we had an app that didn't just show where a park was, but gave us the real-time details caregivers actually need—like whether the toddler swings are working or if there's a restroom nearby—so families can pick the right park on the first try. That trip inspired us to build Playground Pulse to ensure no family has to deal with ruined park outings again.</p>
       </div>
 
-      <div class="about-overview-grid">
+      <div class="about-overview-grid about-intro-grid">
         <article class="card about-copy-card">
-          <h3>Name and purpose</h3>
-          <p>Playground Pulse is a web application focused on playground discovery. Its main purpose is to help families make faster, safer decisions about where to go by centralizing child-friendly filters, current crowd information, and community reporting in one place.</p>
-          <h3>Intended users</h3>
-          <p>The primary users are parents and caregivers. The application also supports Park Admin and Site Admin roles so trusted users can maintain park information, review reports, manage equipment status, and moderate community content.</p>
+          <h3>Project Purpose &amp; Overview</h3>
+          <p><strong>Playground Pulse</strong> is a kid-friendly park discovery web application built to give families better, more actionable information than a general map search can provide. It helps caregivers decide whether a park matches a child’s age group, meets safety expectations, and reflects current real-time conditions before leaving home.</p>
         </article>
 
         <article class="card about-copy-card">
-          <h3>The problem</h3>
-          <p>General-purpose mapping tools do not answer the questions families actually ask before a trip: Is there toddler-safe equipment? Are the restrooms open? Is the park fenced? Is it too crowded right now? Playground Pulse addresses that gap with park-specific, family-focused information.</p>
-          <h3>What the team built</h3>
-          <p>Our team built a role-aware experience with account creation and login, searchable park listings, child-friendly filters, crowd reporting, safety and maintenance reporting, profile management, community features, favorites, photo uploads, and administration workflows supported by Firebase services.</p>
+          <h3>The Problem We Solve</h3>
+          <p>General-purpose mapping tools often leave parents without clear answers to key questions:</p>
+          <ul>
+            <li><em>Is there toddler-safe equipment or fencing?</em></li>
+            <li><em>Are the restrooms open and operational?</em></li>
+            <li><em>Are swings, splash pads, or other structures broken or under maintenance?</em></li>
+            <li><em>Is the park too crowded right now?</em></li>
+          </ul>
+          <p>Playground Pulse brings those details together in one reliable platform.</p>
         </article>
       </div>
 
-      <div class="about-feature-grid" aria-label="Main features developed by the team">
-        <article class="card about-feature-card">
-          <h3>Authentication and Roles</h3>
-          <p>Registration, login, logout, forgot-password recovery, protected pages, and role-aware permissions for Parent, Park Admin, and Site Admin users.</p>
+      <div class="about-overview-grid about-intro-grid">
+        <article class="card about-copy-card">
+          <h3>Intended Users</h3>
+          <ul>
+            <li><strong>Parents &amp; Caregivers:</strong> Search parks, filter by amenities, view live crowd levels, save favorites, submit safety concerns, upload photos, and write reviews.</li>
+            <li><strong>Park Admins:</strong> Manage assigned parks, update maintenance status, and resolve safety hazards.</li>
+            <li><strong>Site Admins:</strong> Add parks, assign admins, moderate reviews, manage account suspensions, and review audit logs.</li>
+          </ul>
         </article>
-        <article class="card about-feature-card">
-          <h3>Park Discovery</h3>
-          <p>Search by name or location, then narrow results with filters for age groups, fencing, restrooms, shade, and maintenance status.</p>
-        </article>
-        <article class="card about-feature-card">
-          <h3>Live Park Context</h3>
-          <p>Crowd reporting, busy-level calculation, seven-day crowd history, and a map view to help families judge current park conditions.</p>
-        </article>
-        <article class="card about-feature-card">
-          <h3>Community Input</h3>
-          <p>Safety and maintenance reports, park reviews, ratings, photo uploads, and favorites saved to user profiles.</p>
-        </article>
-        <article class="card about-feature-card">
-          <h3>Administration</h3>
-          <p>Park management, equipment status updates, moderation workflows, audit logging, notifications, and park-admin assignment tools.</p>
+
+        <article class="card about-copy-card">
+          <h3>Main Features Built by Our Team</h3>
+          <p>Powered by a modern full-stack web architecture backed by <strong>Firebase services</strong>, our team developed a comprehensive, role-aware system organized into five key modules:</p>
+
+          <h4>Authentication &amp; Role-Based Access (RBAC)</h4>
+          <ul>
+            <li>Secure registration, login, logout, and single-use link password recovery.</li>
+            <li>Protected page routing ensuring custom interface views for Parent, Park Admin, and Site Admin roles.</li>
+          </ul>
+
+          <h4>Smart Park Discovery</h4>
+          <ul>
+            <li>Location-based search (by park name, city, or zip code).</li>
+            <li>Child-friendly multi-filtering for age groups (toddler vs. older kids), restrooms, shade, fencing, and maintenance status.</li>
+          </ul>
+
+          <h4>Live Park Context &amp; Real-Time Insights</h4>
+          <ul>
+            <li>Community-driven crowd reporting with automated anti-spam limits.</li>
+            <li>Mathematical mode crowd calculations showing real-time busy levels (“Not Busy”, “Moderate”, “Very Busy”).</li>
+            <li>Interactive map view with circular privacy markers for quick visual planning.</li>
+          </ul>
+
+          <h4>Community Safety &amp; Engagement Loops</h4>
+          <ul>
+            <li>Safety and hazard report submission forms with photo upload capabilities (JPG/PNG).</li>
+            <li>Park reviews, 1-to-5 star ratings, and personalized “Favorites” saved to user profile dashboards.</li>
+          </ul>
+
+          <h4>Administration &amp; Moderation Suite</h4>
+          <ul>
+            <li>Park onboarding and equipment maintenance status toggle switches.</li>
+            <li>Administrative safety issue resolution workflows and moderation tools for content/users.</li>
+            <li>Immutable system audit logging to track administrative actions and support maintainability.</li>
+          </ul>
         </article>
       </div>
     </section>
@@ -226,30 +256,34 @@
 
     <section id="future-improvements" class="about-section">
       <div class="page-intro card about-section-intro">
-        <p class="eyebrow">5. Future improvements</p>
-        <p class="page-intro-copy">The next phase should focus on the changes that most improve trust, maintainability, and everyday usability rather than simply adding more isolated features.</p>
+        <p class="eyebrow">5. Future improvements &amp; lessons learned</p>
+        <p class="page-intro-copy">If development on <strong>Playground Pulse</strong> were to continue, our roadmap would focus on expanding real-world usability, increasing mapping precision, and refining system architecture based on what we learned during development.</p>
       </div>
 
       <div class="about-roadmap-grid">
         <article class="card about-roadmap-card">
-          <p class="about-roadmap-label">Highest-priority feature or fix</p>
-          <h3>Strengthen end-to-end admin and moderation workflows</h3>
-          <p>The application already includes administration tools, but those flows would benefit from deeper validation, clearer edge-case handling, and smoother park-scoped moderation behavior.</p>
+          <p class="about-roadmap-label">Highest-priority feature</p>
+          <h3>Geographic Expansion of the Park Repository</h3>
+          <p><strong>The Focus:</strong> Growing the active park database beyond the initial Livonia, Michigan pilot area to encompass surrounding metropolitan communities.</p>
+          <p><strong>Why It Matters:</strong> Scaling the dataset will allow more families across the region to benefit from the platform. This expansion would also include a <strong>“Suggest a Park”</strong> submission workflow, enabling community members and local park districts to request new playground listings directly.</p>
         </article>
         <article class="card about-roadmap-card">
           <p class="about-roadmap-label">Quality improvement</p>
-          <h3>Expand testing coverage for full user journeys</h3>
-          <p>The best next quality investment would be more repeatable testing across authentication, role-specific permissions, park detail actions, and responsive layouts.</p>
+          <h3>Enhanced Map Pin &amp; Geocoding Accuracy</h3>
+          <p><strong>The Focus:</strong> Fine-tuning map marker placement and latitude/longitude geocoding precision across interactive mapping views.</p>
+          <p><strong>Why It Matters:</strong> While current markers display general park areas, upgrading to high-precision geocoding will allow families to see exact pinpoints for main entrance gates, designated parking lots, and specific play structures—saving time and preventing confusion when visiting a new park for the first time.</p>
         </article>
         <article class="card about-roadmap-card">
           <p class="about-roadmap-label">Redesign or refactor target</p>
-          <h3>Refine the dashboard information architecture</h3>
-          <p>The dashboard now carries search, detail, reporting, community, and map responsibilities. A future refactor should separate those concerns more cleanly without losing quick access to key park actions.</p>
+          <h3>Dashboard &amp; Detail Page Information Architecture</h3>
+          <p><strong>The Focus:</strong> Refactoring the main Park Detail and Dashboard views into a modular, tabbed component architecture.</p>
+          <p><strong>Why It Matters:</strong> As search filtering, interactive maps, real-time crowd updates, safety reports, and community reviews were added, the dashboard interface naturally became dense. Refactoring these responsibilities into distinct, dedicated sub-views will keep the user interface clean, responsive, and intuitive as new features are introduced.</p>
         </article>
         <article class="card about-roadmap-card">
           <p class="about-roadmap-label">What we would approach differently</p>
-          <h3>Lock shared contracts earlier across sprints</h3>
-          <p>If we repeated the project, we would invest earlier in stable shared data contracts and feature boundaries so advanced Sprint 2 and Sprint 3 work could integrate with less rework.</p>
+          <h3>Earlier Interface Contracts &amp; Schema Locks</h3>
+          <p><strong>The Reflection:</strong> If we were starting this project over, our team would establish and lock down shared data contracts, mock API responses, and database schemas earlier in Sprint 1.</p>
+          <p><strong>The Benefit:</strong> Defining these data structures upfront would allow frontend UI styling and backend integration logic to be developed in parallel with zero friction, eliminating the need for minor data-mapping adjustments during Sprints 2 and 3.</p>
         </article>
       </div>
     </section>

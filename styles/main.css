@@ -2353,7 +2353,7 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 
 .about-section {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
   scroll-margin-top: 8.5rem;
 }
 
@@ -2367,11 +2367,15 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 .about-lessons-grid,
 .about-roadmap-grid {
   display: grid;
-  gap: 1rem;
+  gap: 1.1rem;
 }
 
 .about-overview-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.about-intro-grid {
+  grid-template-columns: 1fr;
 }
 
 .about-feature-grid,
@@ -2400,7 +2404,22 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 .about-lesson-card,
 .about-roadmap-card {
   display: grid;
-  gap: 0.7rem;
+  gap: 0.45rem;
+}
+
+.about-copy-card > h4 {
+  margin: 0.1rem 0 0;
+}
+
+.about-copy-card > p,
+.about-copy-card > ul,
+.about-copy-card > ol {
+  margin: 0;
+}
+
+.about-copy-card > ul,
+.about-copy-card > ol {
+  padding-left: 1.15rem;
 }
 
 .about-copy-card h3,
@@ -2411,6 +2430,11 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 .about-roadmap-card h3,
 .about-footer h2 {
   margin: 0;
+}
+
+.about-roadmap-card h3 {
+  font-size: 1rem;
+  line-height: 1.35;
 }
 
 .about-feature-card {
