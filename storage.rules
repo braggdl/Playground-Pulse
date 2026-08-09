@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Playground Pulse — Cloud Storage security rules
+//
+// Mirrors PHOTO_VALIDATION_POLICY in services/storageService.js. Those checks run
+// in the browser and can be bypassed by calling the Storage SDK directly, so the
+// same limits are enforced here where they cannot be skipped.
+//
+// Upload path is built by uploadParkPhoto():
+//   parks/{parkId}/photos/{timestamp}-{random}.{ext}
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && (request.auth.token.role == 'Site Admin'
+            || request.auth.token.role == 'Park Admin');
+    }
+
+    function isAllowedImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp)')
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    match /parks/{parkId}/photos/{fileName} {
+      // Park photos are shown on the public park detail view.
+      allow read: if true;
+
+      // Any signed-in user may contribute a photo, subject to type/size limits.
+      allow create: if isSignedIn() && isAllowedImage();
+
+      // Photos are immutable once uploaded; replacing means uploading a new file.
+      allow update: if false;
+
+      // Moderation: admins can take down an inappropriate photo.
+      allow delete: if isAdmin();
+    }
+
+    // Default deny for every other path in the bucket.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

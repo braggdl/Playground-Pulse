@@ -9,6 +9,10 @@ const CROWD_REPORT_POLICY = {
   collectionName: "crowdReports",
   windowMinutes: 150,        // 2.5-hour rolling window for busy-level calculation and expiry
   reportsPerWindow: 1,       // one submission per user per park per hourly dedup key
+  // Upper bound on documents read per park when computing a busy level. The weighted
+  // average converges well before this many reports, so the cap bounds cost without
+  // meaningfully changing the result.
+  maxReportsPerBusyLevelQuery: 50,
   validCrowdLevels: [1, 2, 3, 4]
 };
 
@@ -27,7 +31,8 @@ const BUSY_LEVEL_THRESHOLDS = {
 };
 
 const BUSY_LEVEL_WEIGHTING_POLICY = {
-  // Most recent report has full weight; oldest report in the 60-minute window keeps a floor weight.
+  // Most recent report has full weight; the oldest report still inside
+  // CROWD_REPORT_POLICY.windowMinutes keeps this floor weight.
   minRecencyWeight: 0.25
 };
 

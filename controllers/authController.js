@@ -348,19 +348,7 @@ async function handleLogin() {
     window.location.href = "./dashboard.html";
   } catch (error) {
     setButtonLoading("login-btn", false);
-
-    // Map Firebase error codes to user-friendly messages
-    if (error.message.includes("auth/user-not-found")) {
-      showError("User not found. Please check your email or register.");
-    } else if (error.message.includes("auth/wrong-password")) {
-      showError("Incorrect password. Please try again.");
-    } else if (error.message.includes("auth/invalid-email")) {
-      showError("Invalid email address.");
-    } else if (error.message.includes("auth/user-disabled")) {
-      showError("This account has been disabled.");
-    } else {
-      showError(error.message || "Login failed. Please try again.");
-    }
+    showError(error.message || "Login failed. Please try again.");
   }
 }
 
@@ -475,25 +463,23 @@ async function handleUpdateDisplayName() {
   setButtonLoading("save-display-name-btn", true);
   
   try {
-    // Update in Firebase Auth
-    await updateAuthDisplayName(newDisplayName);
-    
+    // Update in Firebase Auth. Returns the live Firebase user object, which is the
+    // same object reference held in appState.currentUser (set by handleAuthStateChanged).
+    const currentUser = await updateAuthDisplayName(newDisplayName);
+
     // Update in Firestore user record
-    const currentUser = window.appState?.currentUser;
     if (currentUser?.uid) {
-      await updateRecord("users", currentUser.uid, { 
+      await updateRecord("users", currentUser.uid, {
         displayName: newDisplayName,
         updatedAt: new Date().toISOString()
       });
     }
-    
-    // Update in DOM and appState
+
+    // Update in DOM. appState.currentUser holds this same Firebase user object,
+    // so the Auth SDK profile update above is already reflected in app state.
     const displayNameText = document.getElementById("profile-display-name");
     if (displayNameText) displayNameText.textContent = newDisplayName;
-    if (window.appState?.currentUser) {
-      window.appState.currentUser.displayName = newDisplayName;
-    }
-    
+
     showProfileMessage("profile-display-name-message", "Display name updated successfully.", false);
     setTimeout(() => {
       closeEditDisplayNameForm();

@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,7 +18,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
+          # Matches the Cloud Functions runtime declared in functions/package.json
           node-version: '24'
 
       - name: Run tests
         run: node tests.js
+
+      - name: Syntax-check Cloud Functions
+        run: node --check index.js
+        working-directory: functions

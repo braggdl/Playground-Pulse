@@ -50,7 +50,7 @@ import {
   updateSafetyReportStatus,
   getRecordById
 } from "../services/databaseService.js";
-import { inviteAdminAccount } from "../services/adminInvitationService.js";
+import { inviteAdminAccount, syncOwnRoleClaim } from "../services/adminInvitationService.js";
 import { subscribeToUserNotifications } from "../services/notificationService.js";
 import {
   getFirebaseServices,
@@ -64,6 +64,9 @@ const appState = {
   authReady: false,
   currentUser: null,
   userRole: null,
+  // Park IDs this user administers. Empty for Parent and Site Admin (Site Admins
+  // manage every park, so the list is not consulted for them).
+  assignedParks: [],
   authStatusMessage: null,
   // Workstream B: Crowd reporting state.
   crowdReportSubmitting: false,
@@ -136,10 +139,11 @@ const appState = {
   crowdHistory: [],
   crowdHistoryError: null,
   crowdHistoryStaleRefreshPending: false,
-  mapMode: false,
+  mapMode: true,
   mapInstance: null,
   mapMarkersLayer: null,
   dashboardParkModalOpen: false,
+  activeParkActionModal: null,
   profileFavoriteModalOpen: false,
   // Admin view state.
   adminParks: [],
@@ -182,22 +186,23 @@ function getCurrentView() {
 }
 
 function isProtectedView(viewName) {
-  return ["dashboard", "profile", "admin"].includes(viewName);
+  return ["profile", "admin"].includes(viewName);
 }
 
 function hideProtectedViewUntilAuthReady() {
+  document.body.classList.remove("protected-pending");
+
   if (!isProtectedView(appState.currentView)) {
+    document.body.style.visibility = "visible";
     return;
   }
 
+  document.body.classList.add("protected-pending");
   document.body.style.visibility = "hidden";
 }
 
 function revealProtectedViewAfterAuthReady() {
-  if (!isProtectedView(appState.currentView)) {
-    return;
-  }
-
+  document.body.classList.remove("protected-pending");
   document.body.style.visibility = "visible";
 }
 
@@ -213,14 +218,48 @@ function getCurrentUserRole() {
   return appState.userRole;
 }
 
-function canCreateParkRecord() {
+/**
+ * Whether the current user administers a specific park.
+ *
+ * Mirrors managesPark() in firestore.rules: Site Admins manage every park, Park
+ * Admins only those in their assignedParks list. Role-only checks are not enough
+ * for park-scoped actions -- the rules would reject the write and the user would
+ * see a raw permission error instead of a disabled control.
+ *
+ * Called with no parkId (e.g. before a park is selected), this falls back to the
+ * role check so admin panels still render.
+ */
+function managesPark(parkId) {
   const role = getCurrentUserRole();
-  return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
+
+  if (role === USER_ROLES.SITE_ADMIN) {
+    return true;
+  }
+
+  if (role !== USER_ROLES.PARK_ADMIN) {
+    return false;
+  }
+
+  if (!parkId) {
+    return true;
+  }
+
+  return (appState.assignedParks || []).includes(parkId);
 }
 
-function canEditParkRecord() {
+function canCreateParkRecord() {
   const role = getCurrentUserRole();
-  return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
+  return role === USER_ROLES.SITE_ADMIN;
+}
+
+function canEditParkRecord(parkId = appState.selectedPark?.id) {
+  const role = getCurrentUserRole();
+
+  if (role !== USER_ROLES.PARK_ADMIN && role !== USER_ROLES.SITE_ADMIN) {
+    return false;
+  }
+
+  return managesPark(parkId);
 }
 
 function canDeleteParkRecord() {
@@ -233,20 +272,26 @@ function canAccessAdminView() {
   return role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN;
 }
 
-function canManageSafetyReports() {
-  return canPerformAction(getCurrentUserRole(), "safetyReportTransition");
+// Park-scoped permissions. Each combines the role rule from PARK_ROLE_RULES with
+// the assigned-park check enforced by managesPark() in firestore.rules.
+function canManageSafetyReports(parkId = appState.selectedPark?.id) {
+  return canPerformAction(getCurrentUserRole(), "safetyReportTransition")
+    && managesPark(parkId);
 }
 
-function canManageEquipment() {
-  return canPerformAction(getCurrentUserRole(), "equipmentStatusChange");
+function canManageEquipment(parkId = appState.selectedPark?.id) {
+  return canPerformAction(getCurrentUserRole(), "equipmentStatusChange")
+    && managesPark(parkId);
 }
 
 function canDeleteSafetyReports() {
+  // Site Admin only per PARK_ROLE_RULES; no park scoping needed.
   return canPerformAction(getCurrentUserRole(), "safetyReportDelete");
 }
 
-function canDeleteEquipmentRecords() {
-  return canPerformAction(getCurrentUserRole(), "equipmentDelete");
+function canDeleteEquipmentRecords(parkId = appState.selectedPark?.id) {
+  return canPerformAction(getCurrentUserRole(), "equipmentDelete")
+    && managesPark(parkId);
 }
 
 function enforceRoleOrThrow(requiredRoles) {
@@ -274,12 +319,31 @@ function formatDisplayDateTime(value) {
     return "Not reported yet";
   }
 
-  const date = new Date(value);
+  const date = parseDateForLocalDisplay(value);
   if (Number.isNaN(date.getTime())) {
     return "Not reported yet";
   }
 
-  return date.toLocaleString();
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
+function parseDateForLocalDisplay(value) {
+  if (!value) {
+    return new Date("");
+  }
+
+  const raw = String(value);
+  const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+  if (dateOnlyPattern.test(raw)) {
+    // Noon UTC avoids most local-date rollbacks when formatting in negative time zones.
+    return new Date(`${raw}T12:00:00.000Z`);
+  }
+
+  return new Date(raw);
 }
 
 function getBusyLevelTone(label) {
@@ -409,7 +473,7 @@ function formatShortDate(value) {
     return "-";
   }
 
-  const date = new Date(value);
+  const date = parseDateForLocalDisplay(value);
   if (Number.isNaN(date.getTime())) {
     return "-";
   }
@@ -517,7 +581,7 @@ function showWelcomePopup(user) {
     return;
   }
 
-  const displayName = user?.displayName || user?.email || "User";
+  const displayName = user?.displayName || "User";
   overlayContainer.innerHTML = `
     <div class="welcome-popup-overlay" id="welcome-popup-inner">
       <div class="welcome-popup">
@@ -739,12 +803,14 @@ async function startNotificationsSubscription() {
 }
 
 function renderCrowdReportPanel() {
-  const reportContainer = getDashboardTargetContainer("crowd-report-container", "crowd-report-modal-container");
+  const reportContainer = appState.activeParkActionModal === "crowd"
+    ? document.getElementById("park-action-modal-content")
+    : getDashboardTargetContainer("crowd-report-container", "crowd-report-modal-container");
   if (!reportContainer) {
     return;
   }
 
-  if (!isAuthenticated() || !appState.selectedPark) {
+  if (!isAuthenticated() || !appState.selectedPark || appState.activeParkActionModal !== "crowd") {
     reportContainer.innerHTML = "";
     return;
   }
@@ -791,6 +857,97 @@ function renderCrowdReportPanel() {
       </form>
     </section>
   `;
+}
+
+function ensureParkActionModalMountedToBody() {
+  if (appState.currentView !== "dashboard") {
+    return;
+  }
+
+  const modal = document.getElementById("park-action-modal");
+  if (modal && modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+}
+
+function setParkActionModal(actionName = null) {
+  appState.activeParkActionModal = actionName;
+
+  if (appState.currentView !== "dashboard") {
+    return;
+  }
+
+  ensureParkActionModalMountedToBody();
+  const modal = document.getElementById("park-action-modal");
+  const modalContent = document.getElementById("park-action-modal-content");
+  const isOpen = Boolean(actionName);
+
+  if (modal) {
+    modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  }
+
+  document.body.classList.toggle("park-action-modal-open", isOpen);
+
+  if (!isOpen && modalContent) {
+    modalContent.innerHTML = "";
+  }
+
+  if (!isOpen) {
+    return;
+  }
+
+  if (modalContent) {
+    modalContent.scrollTop = 0;
+  }
+
+  if (actionName === "crowd") {
+    renderCrowdReportPanel();
+  }
+
+  if (actionName === "equipment") {
+    renderEquipmentPanel();
+  }
+
+  if (actionName === "review") {
+    renderReviewActionPanel();
+  }
+
+  if (actionName === "edit") {
+    renderParkForm();
+  }
+}
+
+function openParkActionModal(actionName) {
+  if (!appState.selectedPark) {
+    return;
+  }
+
+  setParkActionModal(actionName);
+}
+
+function closeParkActionModal() {
+  setParkActionModal(null);
+}
+
+function updateAuthNavButton() {
+  const existingButton = document.getElementById("logout-btn");
+  if (!existingButton) {
+    return;
+  }
+
+  const replacementButton = existingButton.cloneNode(true);
+  existingButton.replaceWith(replacementButton);
+
+  if (isAuthenticated()) {
+    replacementButton.textContent = "Logout";
+    replacementButton.addEventListener("click", handleLogout);
+    return;
+  }
+
+  replacementButton.textContent = "Login";
+  replacementButton.addEventListener("click", () => {
+    window.location.href = "./login.html";
+  });
 }
 
 function ensureDashboardModalMountedToBody() {
@@ -846,6 +1003,26 @@ function getDashboardTargetContainer(defaultContainerId, modalContainerId) {
   }
 
   return defaultContainer;
+}
+
+function isEventInsideDashboardModalContent(event) {
+  if (event && typeof event.composedPath === "function") {
+    const eventPath = event.composedPath();
+    const hasModalContentInPath = eventPath.some((node) =>
+      node instanceof Element && node.classList.contains("dashboard-park-modal-content")
+    );
+
+    if (hasModalContentInPath) {
+      return true;
+    }
+  }
+
+  const rawTarget = event?.target;
+  const targetElement = rawTarget instanceof Element
+    ? rawTarget
+    : (rawTarget instanceof Node ? rawTarget.parentElement : null);
+
+  return Boolean(targetElement?.closest(".dashboard-park-modal-content"));
 }
 
 function renderNotificationPanel() {
@@ -998,12 +1175,14 @@ function renderSafetyReportPanel() {
 }
 
 function renderEquipmentPanel() {
-  const container = getDashboardTargetContainer("equipment-panel-container", "equipment-panel-modal-container");
+  const container = appState.activeParkActionModal === "equipment"
+    ? document.getElementById("park-action-modal-content")
+    : getDashboardTargetContainer("equipment-panel-container", "equipment-panel-modal-container");
   if (!container) {
     return;
   }
 
-  if (!isAuthenticated() || !appState.selectedPark) {
+  if (!isAuthenticated() || !appState.selectedPark || appState.activeParkActionModal !== "equipment") {
     container.innerHTML = "";
     return;
   }
@@ -1063,7 +1242,7 @@ function renderEquipmentPanel() {
 }
 
 function renderCrowdHistoryPanel() {
-  const container = document.getElementById("crowd-history-container");
+  const container = getDashboardTargetContainer("crowd-history-container", "crowd-history-modal-container");
   if (!container) {
     return;
   }
@@ -1073,12 +1252,10 @@ function renderCrowdHistoryPanel() {
     return;
   }
 
-  // Auto-refresh if the date range no longer ends on today (UTC).
+  // Auto-refresh if the date range no longer includes today (UTC).
   const todayUTC = new Date().toISOString().slice(0, 10);
-  const lastHistoryDate = appState.crowdHistory.length > 0
-    ? appState.crowdHistory[appState.crowdHistory.length - 1]?.date
-    : null;
-  const rangeIsStale = lastHistoryDate !== null && lastHistoryDate < todayUTC;
+  const hasTodayInRange = appState.crowdHistory.some((day) => day?.date === todayUTC);
+  const rangeIsStale = appState.crowdHistory.length > 0 && !hasTodayInRange;
 
   if (rangeIsStale && !appState.crowdHistoryStaleRefreshPending) {
     appState.crowdHistoryStaleRefreshPending = true;
@@ -1137,6 +1314,9 @@ function renderCrowdHistoryPanel() {
 }
 
 function renderMapPanel() {
+  const DEFAULT_LIVONIA_CENTER = [42.3684, -83.3527];
+  const DEFAULT_LIVONIA_ZOOM = 11;
+
   const container = document.getElementById("park-map-container");
   if (!container) {
     return;
@@ -1144,7 +1324,7 @@ function renderMapPanel() {
 
   const toggleButton = document.getElementById("toggle-map-view-btn");
   if (toggleButton) {
-    const shouldShowToggle = isAuthenticated() && appState.currentView === "dashboard";
+    const shouldShowToggle = appState.currentView === "dashboard";
     toggleButton.style.display = shouldShowToggle ? "inline-flex" : "none";
     toggleButton.textContent = appState.mapMode ? "Hide Map" : "Map View";
   }
@@ -1155,12 +1335,14 @@ function renderMapPanel() {
   }
 
   container.style.display = "block";
-  container.innerHTML = `
-    <section class="card">
-      <h3>Park Map View</h3>
-      <div id="leaflet-map-canvas" class="park-map-view"></div>
-    </section>
-  `;
+  if (!container.querySelector("#leaflet-map-canvas")) {
+    container.innerHTML = `
+      <section class="card">
+        <h3>Park Map View</h3>
+        <div id="leaflet-map-canvas" class="park-map-view"></div>
+      </section>
+    `;
+  }
 
   if (!window.L) {
     container.innerHTML += "<p class='crowd-report-message crowd-report-error'>Map library failed to load.</p>";
@@ -1172,16 +1354,22 @@ function renderMapPanel() {
     return;
   }
 
+  if (appState.mapInstance && appState.mapInstance.getContainer() !== mapElement) {
+    appState.mapInstance.remove();
+    appState.mapInstance = null;
+    appState.mapMarkersLayer = null;
+  }
+
   if (!appState.mapInstance) {
-    appState.mapInstance = window.L.map(mapElement).setView([39.5, -98.35], 4);
+    appState.mapInstance = window.L.map(mapElement).setView(DEFAULT_LIVONIA_CENTER, DEFAULT_LIVONIA_ZOOM);
     window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors"
     }).addTo(appState.mapInstance);
     appState.mapMarkersLayer = window.L.layerGroup().addTo(appState.mapInstance);
-  } else {
-    appState.mapInstance.invalidateSize();
   }
+
+  appState.mapInstance.invalidateSize();
 
   if (appState.mapMarkersLayer) {
     appState.mapMarkersLayer.clearLayers();
@@ -1191,7 +1379,17 @@ function renderMapPanel() {
     .map((park) => ({ park, coordinates: getParkCoordinates(park) }))
     .filter((item) => Array.isArray(item.coordinates));
 
+  const hasSearchTerm = Boolean((appState.searchTerm || "").trim());
+  const hasFilters = Object.values(appState.filterCriteria || {}).some((value) => {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    return value !== null && value !== "";
+  });
+
   if (parksWithCoordinates.length === 0) {
+    appState.mapInstance.setView(DEFAULT_LIVONIA_CENTER, DEFAULT_LIVONIA_ZOOM);
     return;
   }
 
@@ -1215,13 +1413,22 @@ function renderMapPanel() {
       </div>
     `);
 
+    marker.on("click", () => {
+      selectParkForDetail(park.id).catch((error) => {
+        console.error("Map pin selection failed:", error);
+      });
+    });
+
     marker.addTo(appState.mapMarkersLayer);
     bounds.push(coordinates);
   });
 
-  if (bounds.length > 0) {
+  if (bounds.length > 0 && (hasSearchTerm || hasFilters)) {
     appState.mapInstance.fitBounds(bounds, { padding: [25, 25] });
+    return;
   }
+
+  appState.mapInstance.setView(DEFAULT_LIVONIA_CENTER, DEFAULT_LIVONIA_ZOOM);
 }
 
 function renderAdminPanels() {
@@ -1233,17 +1440,20 @@ function renderAdminPanels() {
     return;
   }
 
+  // Admin console actions are scoped to the park selected in this view, not the
+  // dashboard's selectedPark.
+  const adminParkId = appState.adminSelectedParkId || "";
   const canDeleteSafety = canDeleteSafetyReports();
-  const canDeleteEquipmentItems = canDeleteEquipmentRecords();
+  const canDeleteEquipmentItems = canDeleteEquipmentRecords(adminParkId);
 
-  if (!canManageSafetyReports() && !canManageEquipment()) {
+  if (!canManageSafetyReports(adminParkId) && !canManageEquipment(adminParkId)) {
     safetyPanel.innerHTML = "<h3>Safety Reports</h3><p>You do not have permission to manage safety reports.</p>";
     equipmentPanel.innerHTML = "<h3>Equipment Status</h3><p>You do not have permission to manage equipment records.</p>";
     statusPanel.innerHTML = "<p>Use a Park Admin or Site Admin account for Workstream 1 management actions.</p>";
     return;
   }
 
-  const selectedParkId = appState.adminSelectedParkId || "";
+  const selectedParkId = adminParkId;
 
   safetyPanel.innerHTML = `
     <h3>Safety Report Queue</h3>
@@ -2072,17 +2282,54 @@ async function selectAdminPark(parkId) {
   await loadCommunityFeaturesForSelectedPark();
   renderAdminPanels();
 }
+/**
+ * Resolve the signed-in user's role.
+ *
+ * The authoritative source is the `role` custom claim on the Auth token, which
+ * only Cloud Functions can set and which Firestore security rules enforce against.
+ * The users/{uid} document is read only as a display fallback.
+ *
+ * Accounts created before custom claims existed have no claim yet; for those we
+ * call syncOwnRoleClaim() once, then force a token refresh so the new claim is
+ * available to security rules on the very next request.
+ *
+ * NOTE: reads users/{uid} by document ID, not by collection query. Security rules
+ * permit a user to read their own document but deny collection-wide queries, so a
+ * where("uid","==",...) lookup here would be rejected for non-admins.
+ */
 async function loadUserRole(uid) {
   try {
-    const users = await readRecords("users", { uid: uid });
-    if (users && users.length > 0) {
-      appState.userRole = users[0].role;
-    } else {
-      appState.userRole = null;
+    const firebaseUser = appState.currentUser;
+    let tokenResult = firebaseUser ? await firebaseUser.getIdTokenResult() : null;
+
+    if (firebaseUser && !tokenResult?.claims?.role) {
+      try {
+        await syncOwnRoleClaim();
+        // Force-refresh so the freshly minted claim is in the token immediately
+        // rather than after the default ~1 hour expiry.
+        tokenResult = await firebaseUser.getIdTokenResult(true);
+      } catch (syncError) {
+        console.warn("Role claim sync unavailable; falling back to profile role:", syncError);
+      }
     }
+
+    // The profile document is still needed for assignedParks, which is not carried
+    // in the token. Reading it is permitted by the rules (own document, by ID).
+    let userRecord = null;
+    try {
+      userRecord = await getRecordById("users", uid);
+    } catch (recordError) {
+      console.warn("Unable to load user profile record:", recordError);
+    }
+
+    appState.userRole = tokenResult?.claims?.role || userRecord?.role || null;
+    appState.assignedParks = Array.isArray(userRecord?.assignedParks)
+      ? userRecord.assignedParks
+      : [];
   } catch (error) {
     console.error("Failed to load user role:", error);
     appState.userRole = null;
+    appState.assignedParks = [];
   }
 }
 
@@ -2136,6 +2383,7 @@ async function handleAuthStateChanged(firebaseUser) {
     stopNotificationsSubscription();
     normalizeNotificationList([]);
     appState.userRole = null;
+    appState.assignedParks = [];
   }
 
   appState.authReady = true;
@@ -2146,6 +2394,7 @@ async function handleAuthStateChanged(firebaseUser) {
   }
 
   revealProtectedViewAfterAuthReady();
+  updateAuthNavButton();
 
   if (appState.currentView === "dashboard") {
     renderParkForm();
@@ -2236,8 +2485,8 @@ async function clearSearchAndFilters() {
   
   const maintenanceSelect = document.getElementById("filter-maintenance");
   if (maintenanceSelect) maintenanceSelect.value = "";
-  
-  renderParkResults();
+
+  await executeSearchAndFilter();
 }
 
 /**
@@ -2255,14 +2504,6 @@ async function executeSearchAndFilter() {
     const hasFilters = Object.values(appState.filterCriteria).some(
       (value) => value !== null && (Array.isArray(value) ? value.length > 0 : true)
     );
-
-    if (!hasSearchTerm && !hasFilters) {
-      appState.parkResults = [];
-      appState.isLoadingParks = false;
-      renderParkResults();
-      renderMapPanel();
-      return;
-    }
 
     const response = await searchAndFilterParks(appState.searchTerm, appState.filterCriteria, {
       pageSize: appState.parkQuery.pageSize
@@ -2316,6 +2557,7 @@ async function selectParkForDetail(parkId) {
  * Clear selected park (back to list)
  */
 function clearParkDetail() {
+  closeParkActionModal();
   setDashboardParkModalOpen(false);
   appState.selectedPark = null;
   appState.reviews = [];
@@ -2350,12 +2592,13 @@ function updateDashboardManagementControls() {
   }
 
   if (mapToggleButton) {
-    mapToggleButton.style.display = isAuthenticated() ? "inline-flex" : "none";
+    mapToggleButton.style.display = appState.currentView === "dashboard" ? "inline-flex" : "none";
   }
 
   if (adminNavLink) {
-    const canSeeAdmin = canManageSafetyReports() || canManageEquipment();
-    adminNavLink.style.display = canSeeAdmin ? "inline-flex" : "none";
+    // Role-only check: the Admin link is about reaching the console at all, not
+    // about any one park. Park scoping is applied to the actions inside it.
+    adminNavLink.style.display = canAccessAdminView() ? "inline-flex" : "none";
   }
 }
 
@@ -2445,24 +2688,26 @@ async function loadMoreParkResults() {
 
 function openCreateParkForm() {
   try {
-    enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
+    enforceRoleOrThrow([USER_ROLES.SITE_ADMIN]);
     appState.parkFormMode = "create";
     appState.parkFormRecordId = null;
     appState.parkFormError = null;
     appState.parkFormSuccess = null;
     renderParkForm();
   } catch (error) {
-    appState.parkFormError = formatAppError(error, "You are not allowed to create parks.");
+    appState.parkFormError = formatAppError(error, "Only Site Admin users can create parks.");
     renderParkForm();
   }
 }
 
 function openEditParkForm() {
   try {
-    enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
-
     if (!appState.selectedPark?.id) {
       throw new Error("Select a park before editing.");
+    }
+
+    if (!canEditParkRecord(appState.selectedPark.id)) {
+      throw new Error("You don't have permission to edit this park.");
     }
 
     appState.parkFormMode = "edit";
@@ -2470,8 +2715,9 @@ function openEditParkForm() {
     appState.parkFormError = null;
     appState.parkFormSuccess = null;
 
-    if (appState.currentView === "dashboard" && getCurrentUserRole() === USER_ROLES.SITE_ADMIN) {
+    if (appState.currentView === "dashboard") {
       setDashboardParkModalOpen(true);
+      setParkActionModal("edit");
     }
 
     renderParkForm();
@@ -2483,15 +2729,26 @@ function openEditParkForm() {
 
 function cancelParkForm() {
   clearParkFormState();
+
+  if (appState.activeParkActionModal === "edit") {
+    closeParkActionModal();
+  }
+
   renderParkForm();
 }
 
 async function submitParkForm() {
   try {
-    enforceRoleOrThrow([USER_ROLES.PARK_ADMIN, USER_ROLES.SITE_ADMIN]);
-
     if (!appState.parkFormMode) {
       throw new Error("No park form is active.");
+    }
+
+    // Creating a park is Site Admin only; editing is allowed for the Park Admins
+    // assigned to that park. Both mirror firestore.rules.
+    if (appState.parkFormMode === "create") {
+      enforceRoleOrThrow([USER_ROLES.SITE_ADMIN]);
+    } else if (!canEditParkRecord(appState.parkFormRecordId)) {
+      throw new Error("You don't have permission to edit this park.");
     }
 
     // Capture current form input values before any state-driven re-render.
@@ -2517,6 +2774,10 @@ async function submitParkForm() {
     appState.isSubmittingParkForm = false;
     clearParkFormState();
     appState.parkFormSuccess = successMessage;
+
+    if (appState.activeParkActionModal === "edit") {
+      closeParkActionModal();
+    }
 
     renderParkDetail();
     renderParkForm();
@@ -2667,37 +2928,77 @@ function renderParkDetail() {
         </ul>
       </section>
 
-      <div id="equipment-panel-modal-container" class="equipment-panel-container"></div>
-
       <section class="detail-section card">
         <div class="detail-section-header">
           <h3>Community</h3>
           ${isAuthenticated() ? `<button class="favorites-toggle ${favoriteIsActive ? "active" : ""}" onclick="window.appControllerExports.toggleFavorite('${park.id}')" title="Save this park">♡</button>` : ""}
         </div>
         <p class="muted">Average rating: ${escapeHtml(avgRating)} • ${reviewCount} review(s)</p>
-        ${renderReviewSection(park)}
-        ${renderPhotoSection(park)}
+        ${photoGallery}
       </section>
+
+      <div id="crowd-history-modal-container" class="crowd-history-container"></div>
       
       ${canEdit ? `
         <section class="detail-section">
           <h3>Actions</h3>
           <button class="btn btn-primary" onclick="window.appControllerExports.openEditParkForm()">Edit Park</button>
+          ${isAuthenticated() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('crowd')">Submit Crowd Report</button>` : ""}
+          ${isAuthenticated() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('review')">Submit Review</button>` : ""}
+          ${(canManageEquipment() || canDeleteEquipmentRecords()) ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('equipment')">Add Equipment</button>` : ""}
         </section>
       ` : ''}
+
+      ${!canEdit ? `
+        <section class="detail-section">
+          <h3>Actions</h3>
+          ${isAuthenticated() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('crowd')">Submit Crowd Report</button>` : ""}
+          ${isAuthenticated() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('review')">Submit Review</button>` : ""}
+          ${(canManageEquipment() || canDeleteEquipmentRecords()) ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('equipment')">Add Equipment</button>` : ""}
+        </section>
+      ` : ""}
     </div>
+  `;
+
+  renderCrowdHistoryPanel();
+}
+
+function renderReviewActionPanel() {
+  const modalContainer = document.getElementById("park-action-modal-content");
+  if (!modalContainer) {
+    return;
+  }
+
+  if (appState.activeParkActionModal !== "review" || !appState.selectedPark) {
+    modalContainer.innerHTML = "";
+    return;
+  }
+
+  modalContainer.innerHTML = `
+    <section class="detail-section card">
+      <h3 style="margin-top: 0;">Review and Photos</h3>
+      ${renderReviewSection(appState.selectedPark)}
+      ${renderPhotoSection(appState.selectedPark)}
+    </section>
   `;
 }
 
 function renderParkForm() {
-  const formContainer = getDashboardTargetContainer("park-form-container", "park-form-modal-container");
+  const formContainer = appState.activeParkActionModal === "edit"
+    ? document.getElementById("park-action-modal-content")
+    : getDashboardTargetContainer("park-form-container", "park-form-modal-container");
   if (!formContainer) {
     return;
   }
 
-  const canManage = canCreateParkRecord();
   const isEditing = appState.parkFormMode === "edit";
   const sourcePark = isEditing ? appState.selectedPark : null;
+  // Editing is park-scoped (Park Admins on assigned parks); creating is Site Admin
+  // only. Gating both on canCreateParkRecord() would hide the edit form from the
+  // Park Admins who are allowed to use it.
+  const canManage = isEditing
+    ? canEditParkRecord(appState.parkFormRecordId)
+    : canCreateParkRecord();
 
   if (!canManage) {
     formContainer.innerHTML = "";
@@ -2723,6 +3024,10 @@ function renderParkForm() {
         <div class="form-group">
           <label for="park-form-location">Location</label>
           <input id="park-form-location" type="text" value="${escapeHtml(sourcePark?.location || "")}" required />
+          <div class="crowd-report-actions" style="margin-top: 0.5rem;">
+            <button id="park-form-lookup-btn" type="button" class="btn btn-secondary" onclick="window.appControllerExports.lookupParkCoordinatesFromAddress()" ${appState.isSubmittingParkForm ? "disabled" : ""}>Look Up Address Coordinates</button>
+          </div>
+          <p id="park-form-lookup-message" class="crowd-report-meta" aria-live="polite"></p>
         </div>
         <div class="form-group form-group-inline">
           <div>
@@ -2779,6 +3084,243 @@ function renderParkForm() {
   `;
 }
 
+function setLookupFeedback(text, statusClass) {
+  const messageElement = document.getElementById("park-form-lookup-message");
+  if (messageElement) {
+    messageElement.textContent = text;
+    messageElement.className = statusClass;
+  }
+}
+
+// Fetch JSON with a hard timeout so lookups never hang without feedback.
+async function fetchJsonWithTimeout(endpoint, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Snap a geocoded coordinate to the nearest OSM park so pins land on the park itself, not an adjacent business or golf course.
+async function findNearestParkCenter(latitude, longitude, radiusDegrees = 0.012) {
+  const bbox = `${latitude - radiusDegrees},${longitude - radiusDegrees},${latitude + radiusDegrees},${longitude + radiusDegrees}`;
+  const query = `[out:json][timeout:12];(way[leisure=park](${bbox});relation[leisure=park](${bbox});node[leisure=park](${bbox}););out center tags;`;
+  const endpoint = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  const payload = await fetchJsonWithTimeout(endpoint, 9000);
+  const elements = Array.isArray(payload?.elements) ? payload.elements : [];
+
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const element of elements) {
+    const elementLat = Number(element.center?.lat ?? element.lat);
+    const elementLon = Number(element.center?.lon ?? element.lon);
+    if (!Number.isFinite(elementLat) || !Number.isFinite(elementLon)) {
+      continue;
+    }
+
+    const dLat = elementLat - latitude;
+    const dLon = elementLon - longitude;
+    const distance = Math.sqrt(dLat * dLat + dLon * dLon);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = { lat: elementLat, lon: elementLon, name: element.tags?.name || "" };
+    }
+  }
+
+  return nearest;
+}
+
+async function lookupParkCoordinatesFromAddress() {
+  const locationInput = document.getElementById("park-form-location");
+  const latitudeInput = document.getElementById("park-form-latitude");
+  const longitudeInput = document.getElementById("park-form-longitude");
+  const lookupButton = document.getElementById("park-form-lookup-btn");
+
+  if (!locationInput || !latitudeInput || !longitudeInput) {
+    setLookupFeedback("Park location inputs are not available.", "crowd-report-message crowd-report-error");
+    return;
+  }
+
+  const sanitizedAddress = (locationInput.value || "")
+    .replace(/[*]+/g, " ")
+    .replace(/[\u2018\u2019\u201C\u201D]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!sanitizedAddress) {
+    setLookupFeedback("Enter a location or address before lookup.", "crowd-report-message crowd-report-error");
+    return;
+  }
+
+  // Immediate feedback + prevent duplicate concurrent lookups.
+  const originalButtonText = lookupButton ? lookupButton.textContent : "";
+  if (lookupButton) {
+    lookupButton.disabled = true;
+    lookupButton.textContent = "Searching…";
+  }
+  setLookupFeedback("Searching for address…", "crowd-report-meta");
+
+  try {
+    const normalizeTokens = (value) => String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s,]/g, " ")
+      .split(/[\s,]+/)
+      .filter(Boolean);
+
+    const inputTokens = normalizeTokens(sanitizedAddress);
+    const inputHouseNumber = (sanitizedAddress.match(/^\s*(\d{1,6})\b/) || [])[1] || "";
+    // Commercial POIs often share a street address with the location we actually want (e.g. a park).
+    const commercialTypes = new Set(["pub", "bar", "restaurant", "cafe", "fast_food", "nightclub", "shop"]);
+
+    const scoreCandidate = (candidate) => {
+      const candidateTokens = normalizeTokens([
+        candidate.display_name,
+        candidate.name,
+        candidate.address?.road,
+        candidate.address?.city,
+        candidate.address?.state,
+        candidate.address?.country
+      ].join(" "));
+
+      const tokenSet = new Set(candidateTokens);
+      const overlapCount = inputTokens.filter((token) => tokenSet.has(token)).length;
+      let score = overlapCount * 4;
+
+      // Exact street number is the single strongest signal of a precise match.
+      if (inputHouseNumber && String(candidate.address?.house_number || "") === inputHouseNumber) {
+        score += 8;
+      }
+
+      const category = String(candidate.class || "").toLowerCase();
+      const type = String(candidate.type || "").toLowerCase();
+      if (category === "leisure" || category === "boundary" || category === "landuse" && type !== "retail") {
+        score += 4;
+      } else if (category === "place" || category === "building" || category === "highway") {
+        score += 2;
+      }
+      if (commercialTypes.has(type) || category === "shop" || type === "retail") {
+        score -= 5;
+      }
+
+      const cityText = `${candidate.address?.city || ""} ${candidate.address?.town || ""} ${candidate.address?.village || ""}`.toLowerCase();
+      if (cityText.includes("livonia")) {
+        score += 3;
+      }
+
+      if (String(candidate.address?.state || "").toLowerCase().includes("michigan")) {
+        score += 2;
+      }
+
+      return score;
+    };
+
+    // Two focused variants: exact input, and a version without the ZIP (which often blocks house-number matches).
+    const withoutZip = sanitizedAddress.replace(/\b\d{5}(?:-\d{4})?\b/g, "").replace(/\s+/g, " ").trim();
+    const queryVariants = [sanitizedAddress, withoutZip]
+      .filter(Boolean)
+      .filter((value, index, array) => array.indexOf(value) === index);
+
+    const fetchPhoton = async (queryText) => {
+      const params = new URLSearchParams({ q: queryText, limit: "10", lang: "en", lat: "42.3684", lon: "-83.3527" });
+      const payload = await fetchJsonWithTimeout(`https://photon.komoot.io/api/?${params.toString()}`);
+      const features = Array.isArray(payload?.features) ? payload.features : [];
+
+      return features
+        .map((feature) => {
+          const coordinates = feature?.geometry?.coordinates;
+          const longitude = Array.isArray(coordinates) ? Number(coordinates[0]) : Number.NaN;
+          const latitude = Array.isArray(coordinates) ? Number(coordinates[1]) : Number.NaN;
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            return null;
+          }
+
+          const properties = feature?.properties || {};
+          const houseNumber = properties.housenumber ? `${properties.housenumber} ` : "";
+          const locality = [properties.city, properties.state, properties.country].filter(Boolean).join(", ");
+
+          return {
+            lat: String(latitude),
+            lon: String(longitude),
+            display_name: [`${houseNumber}${properties.street || properties.name || ""}`.trim(), locality].filter(Boolean).join(", "),
+            name: properties.name || properties.street || "",
+            class: properties.osm_key || "",
+            type: properties.osm_value || "",
+            address: {
+              house_number: properties.housenumber || "",
+              road: properties.street || "",
+              city: properties.city || properties.locality || "",
+              state: properties.state || "",
+              country: properties.country || ""
+            }
+          };
+        })
+        .filter((item) => item !== null);
+    };
+
+    const fetchNominatim = async (queryText) => {
+      const params = new URLSearchParams({
+        format: "jsonv2",
+        addressdetails: "1",
+        countrycodes: "us",
+        limit: "10",
+        q: queryText
+      });
+      const results = await fetchJsonWithTimeout(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
+      return (Array.isArray(results) ? results : []).map((result) => ({
+        ...result,
+        class: result.class || result.category || ""
+      }));
+    };
+
+    // Query both providers in parallel per variant and merge so scoring can pick the most precise match.
+    let candidates = [];
+    for (const queryText of queryVariants) {
+      const [photonResults, nominatimResults] = await Promise.all([
+        fetchPhoton(queryText),
+        fetchNominatim(queryText)
+      ]);
+      candidates = [...photonResults, ...nominatimResults];
+      if (candidates.length > 0) {
+        break;
+      }
+    }
+
+    const topResult = candidates
+      .filter((candidate) => Number.isFinite(Number(candidate?.lat)) && Number.isFinite(Number(candidate?.lon)))
+      .map((candidate) => ({ candidate, score: scoreCandidate(candidate) }))
+      .sort((left, right) => right.score - left.score)[0]?.candidate || null;
+
+    if (!topResult?.lat || !topResult?.lon) {
+      throw new Error("No matching location was found. Try adding or removing the ZIP code, or simplifying the address.");
+    }
+
+    latitudeInput.value = String(topResult.lat);
+    longitudeInput.value = String(topResult.lon);
+    setLookupFeedback(`Coordinates loaded: ${topResult.display_name || "best match"}.`, "crowd-report-meta crowd-report-success");
+  } catch (error) {
+    setLookupFeedback(formatAppError(error, "Unable to look up the address."), "crowd-report-message crowd-report-error");
+  } finally {
+    if (lookupButton) {
+      lookupButton.disabled = false;
+      lookupButton.textContent = originalButtonText || "Look Up Address Coordinates";
+    }
+  }
+}
+
 function initializeViewController() {
   if (appState.currentView === "login" || appState.currentView === "profile" || appState.currentView === "admin") {
     initializeAuthController();
@@ -2810,6 +3352,7 @@ function initializeViewController() {
   // Phase 3: Initialize search and filter handlers for dashboard
   if (appState.currentView === "dashboard") {
     ensureDashboardModalMountedToBody();
+    ensureParkActionModalMountedToBody();
     const notificationToggleButton = document.getElementById("admin-notifications-toggle-btn");
     if (notificationToggleButton) {
       notificationToggleButton.addEventListener("click", toggleNotificationPanel);
@@ -2821,9 +3364,11 @@ function initializeViewController() {
           return;
         }
 
-        const targetElement = event.target instanceof Element ? event.target : null;
-        const clickedInsideContent = targetElement?.closest(".dashboard-park-modal-content");
-        if (!clickedInsideContent) {
+        if (appState.activeParkActionModal) {
+          return;
+        }
+
+        if (!isEventInsideDashboardModalContent(event)) {
           clearParkDetail();
         }
       });
@@ -2833,9 +3378,11 @@ function initializeViewController() {
         return;
       }
 
-      const targetElement = event.target instanceof Element ? event.target : null;
-      const clickedInsideContent = targetElement?.closest(".dashboard-park-modal-content");
-      if (!clickedInsideContent) {
+      if (appState.activeParkActionModal) {
+        return;
+      }
+
+      if (!isEventInsideDashboardModalContent(event)) {
         clearParkDetail();
       }
     }, true);
@@ -2847,6 +3394,11 @@ function initializeViewController() {
     renderCrowdHistoryPanel();
     renderMapPanel();
     document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && appState.activeParkActionModal) {
+        closeParkActionModal();
+        return;
+      }
+
       if (event.key === "Escape" && appState.dashboardParkModalOpen) {
         clearParkDetail();
       }
@@ -3125,6 +3677,7 @@ async function submitReview(parkId) {
     appState.reviewError = null;
     appState.reviewSuccess = null;
     renderParkDetail();
+    renderReviewActionPanel();
 
     const createdReview = await createReview(parkId, appState.currentUser.uid, {
       rating: appState.reviewForm.rating,
@@ -3145,11 +3698,14 @@ async function submitReview(parkId) {
     }
     appState.reviewSubmitting = false;
     renderParkDetail();
+    renderReviewActionPanel();
   } catch (error) {
     appState.reviewSubmitting = false;
     appState.reviewError = formatAppError(error, "Unable to submit review.");
     renderParkDetail();
+    renderReviewActionPanel();
   }
+
 }
 
 async function submitPhoto(parkId) {
@@ -3165,6 +3721,7 @@ async function submitPhoto(parkId) {
     appState.photoError = null;
     appState.photoSuccess = null;
     renderParkDetail();
+    renderReviewActionPanel();
 
     const result = await submitParkPhoto(parkId, appState.currentUser.uid, file);
     appState.photoSuccess = "Photo uploaded successfully.";
@@ -3174,10 +3731,12 @@ async function submitPhoto(parkId) {
     };
     appState.photoSubmitting = false;
     renderParkDetail();
+    renderReviewActionPanel();
   } catch (error) {
     appState.photoSubmitting = false;
     appState.photoError = formatAppError(error, "Unable to upload photo.");
     renderParkDetail();
+    renderReviewActionPanel();
   }
 }
 
@@ -3311,6 +3870,8 @@ function initializeParkSearchAndFilter() {
     mapToggleButton.addEventListener("click", toggleMapView);
   }
 
+  executeSearchAndFilter();
+
 }
 
 function initializeApp() {
@@ -3332,6 +3893,8 @@ function initializeApp() {
       selectParkForDetail,
       clearParkDetail,
       closeDashboardParkModal: clearParkDetail,
+      openParkActionModal,
+      closeParkActionModal,
       openProfileFavoriteDetail,
       closeProfileFavoriteDetail,
       updateSearchTerm,
@@ -3342,6 +3905,7 @@ function initializeApp() {
       openEditParkForm,
       cancelParkForm,
       submitParkForm,
+      lookupParkCoordinatesFromAddress,
       updateCrowdReportLevel,
       submitCrowdReportFromSelection,
       clearCrowdReportSelection,

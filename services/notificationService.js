@@ -37,6 +37,7 @@ import {
   collection,
   limit,
   onSnapshot,
+  orderBy,
   query,
   where
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
@@ -117,10 +118,14 @@ function subscribeToUserNotifications(userId, onChange, onError) {
   initializeFirebaseServices();
   const { db } = getFirebaseServices();
   const notificationsRef = collection(db, "notifications");
-  // Avoid composite index requirement; results are sorted client-side in normalizeNotificationList.
+  // Order server-side so the 100-document cap returns the 100 *newest* notifications.
+  // Previously this used limit() without orderBy, which returned an arbitrary subset
+  // once a user accumulated more than 100 notifications.
+  // Requires the composite index (userId ASC, createdAt DESC) in firestore.indexes.json.
   const notificationsQuery = query(
     notificationsRef,
     where("userId", "==", userId),
+    orderBy("createdAt", "desc"),
     limit(100)
   );
 

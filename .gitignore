@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Firebase CLI artifacts
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+database-debug.log
+pubsub-debug.log
+ui-debug.log
+*.log
+
+# Environment / secrets
+# NOTE: .firebaserc is intentionally NOT ignored. It holds only the project
+# alias/ID (not a secret) and committing it keeps deploys reproducible.
+.env
+.env.*
+!.env.example
+*.local
+serviceAccountKey.json
+service-account*.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,245 @@
+rules_version = '2';
+
+// Playground Pulse — Firestore security rules
+//
+// AUTHORITY MODEL
+// ---------------
+// Roles live in the Auth token as a custom claim (`request.auth.token.role`),
+// set only by the Cloud Functions in functions/index.js via the Admin SDK.
+// The `users/{uid}.role` document field is a display/query copy ONLY and is
+// never trusted here — these rules explicitly forbid clients from writing it.
+//
+// Park Admin scoping reads `assignedParks` from the user document. That is safe
+// because these rules make the field server-writable only (Cloud Functions use
+// the Admin SDK, which bypasses rules entirely).
+//
+// These rules mirror PARK_ROLE_RULES in constants/authConstants.js. Keep the two
+// in sync: the constants drive the UI, these rules are the actual enforcement.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function isSiteAdmin() {
+      return isSignedIn() && role() == 'Site Admin';
+    }
+
+    function isParkAdmin() {
+      return isSignedIn() && role() == 'Park Admin';
+    }
+
+    function isAdmin() {
+      return isSiteAdmin() || isParkAdmin();
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Site Admins manage every park; Park Admins only their assigned ones.
+    function managesPark(parkId) {
+      return isSiteAdmin()
+        || (isParkAdmin() && parkId in userDoc().get('assignedParks', []));
+    }
+
+    // Fields on a user document that only the server may ever change.
+    function touchesPrivilegedUserFields() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasAny(['role', 'assignedParks', 'disabled', 'moderationAction',
+                 'moderatedBy', 'moderatedAt', 'invitedBy', 'invitationStatus']);
+    }
+
+    // ---------- users ----------
+
+    match /users/{userId} {
+      // Admin console lists and searches users; everyone else sees only themselves.
+      allow read: if isSelf(userId) || isAdmin();
+
+      // Self-signup. The client may only create its OWN document, and only with
+      // the default Parent role. Privileged roles are issued exclusively through
+      // the inviteAdminUser Cloud Function.
+      allow create: if isSelf(userId)
+                    && request.resource.data.uid == userId
+                    && request.resource.data.role == 'Parent';
+
+      // Profile self-edits (display name, password metadata). Role changes,
+      // park assignments, and moderation flags are rejected here — they must go
+      // through setUserRoleAndParks / moderation Cloud Functions.
+      allow update: if isSelf(userId) && !touchesPrivilegedUserFields();
+
+      // Accounts are disabled via moderation, never hard-deleted from the client.
+      allow delete: if false;
+
+      // ---------- favorites (owner-private subcollection) ----------
+      match /favorites/{favoriteId} {
+        allow read, write: if isSelf(userId);
+      }
+    }
+
+    // ---------- parks ----------
+
+    match /parks/{parkId} {
+      // Public. Park discovery/search does not require an account.
+      allow read: if true;
+
+      // Site Admin only, matching canCreateParkRecord() in appController.js and
+      // the product intent recorded in development/Team Feedback.
+      allow create: if isSiteAdmin();
+
+      // Two distinct update paths:
+      //  1. Admins editing park content.
+      //  2. Any signed-in user indirectly touching DERIVED fields as a side effect
+      //     of a normal action: leaving a review (reviewAggregate), uploading a
+      //     photo (photos), or submitting a crowd report (busyLevel,
+      //     crowdReporting). These are denormalized caches recomputed from the
+      //     reviews/crowdReports collections on read, and both readers treat them
+      //     as stale past CROWD_REPORT_POLICY.windowMinutes, so a bad value is
+      //     self-correcting rather than authoritative. Descriptive park content
+      //     (name, location, amenities, ...) stays admin-only.
+      allow update: if managesPark(parkId)
+                    || (isSignedIn()
+                        && request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasOnly(['reviewAggregate', 'photos', 'busyLevel',
+                                       'crowdReporting', 'updatedAt']));
+
+      allow delete: if isSiteAdmin();
+    }
+
+    // ---------- crowd reports ----------
+
+    match /crowdReports/{reportId} {
+      allow read: if true;
+
+      // One report per user, attributed to that user, with a valid level.
+      // Per-user/per-hour deduplication is enforced in submitCrowdReport() via
+      // windowKey; the field is required here so that check cannot be skipped.
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.crowdLevel is int
+                    && request.resource.data.crowdLevel >= 1
+                    && request.resource.data.crowdLevel <= 4
+                    && request.resource.data.parkId is string
+                    && request.resource.data.reportedAt is string
+                    && request.resource.data.windowKey is string;
+
+      // Reports are an immutable historical record.
+      allow update: if false;
+      allow delete: if isSiteAdmin();
+    }
+
+    // ---------- reviews ----------
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.rating is int
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5
+                    && request.resource.data.hidden == false;
+
+      // Authors may edit their own text/rating but never the moderation flag.
+      // Moderators may set `hidden` (moderateReview) on parks they manage.
+      allow update: if (isSelf(resource.data.userId)
+                        && request.resource.data.diff(resource.data)
+                             .affectedKeys()
+                             .hasOnly(['rating', 'body', 'updatedAt']))
+                    || managesPark(resource.data.parkId);
+
+      allow delete: if isSiteAdmin();
+    }
+
+    // ---------- safety reports ----------
+
+    match /safetyReports/{reportId} {
+      allow read: if true;
+
+      allow create: if isSignedIn()
+                    && request.resource.data.parkId is string
+                    && request.resource.data.status == 'open';
+
+      // Status transitions are Park Admin (assigned parks) or Site Admin.
+      // Matches PARK_ROLE_RULES.safetyReportTransition.
+      allow update: if managesPark(resource.data.parkId);
+
+      // Matches PARK_ROLE_RULES.safetyReportDelete — Site Admin only.
+      allow delete: if isSiteAdmin();
+    }
+
+    // ---------- equipment ----------
+
+    match /equipment/{equipmentId} {
+      allow read: if true;
+
+      // Matches PARK_ROLE_RULES.equipmentStatusChange / equipmentDelete.
+      allow create: if managesPark(request.resource.data.parkId);
+      allow update: if managesPark(resource.data.parkId);
+      allow delete: if managesPark(resource.data.parkId);
+    }
+
+    // ---------- notifications ----------
+
+    match /notifications/{notificationId} {
+      // Recipient-private.
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // Admins generate notifications for other users on safety status changes.
+      allow create: if isAdmin();
+
+      // Recipients may only flip the read flag.
+      allow update: if isSignedIn()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys()
+                         .hasOnly(['read', 'isRead', 'readAt', 'updatedAt']);
+
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ---------- audit log ----------
+
+    match /auditLog/{entryId} {
+      // Matches PARK_ROLE_RULES.viewAuditLog — Site Admin only.
+      allow read: if isSiteAdmin();
+
+      // Append-only, per models/auditLogModel.js. Admins may append entries
+      // (logAuditEvent runs client-side today); nobody may ever rewrite history.
+      // TODO: move audit writes into Cloud Functions so entries cannot be forged
+      // by an admin crafting arbitrary actorId/eventType values.
+      allow create: if isAdmin()
+                    && request.resource.data.actorId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---------- admin invitations ----------
+
+    match /adminInvites/{inviteId} {
+      // Written exclusively by the inviteAdminUser Cloud Function, which uses the
+      // Admin SDK and bypasses these rules.
+      allow read: if isSiteAdmin();
+      allow write: if false;
+    }
+
+    // ---------- default deny ----------
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

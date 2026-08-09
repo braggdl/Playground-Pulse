@@ -1,33 +1,33 @@
 - Team Feedback Grouped by Feature and Function
 
 - Authentication and Login UX
-    + Investigate different failure messages for different types of login failures.
-    + Login splash should display name, not e-mail.
-    + AI: Duplicate auth toggle ID bug.
+    + + Investigate different failure messages for different types of login failures.
+    + + Login splash should display name, not e-mail.
+    + + AI: Duplicate auth toggle ID bug.
 
 - Authorization and Security Model
-    + Park Admins should not be able to create parks.
+    + + Park Admins should not be able to create parks.
     - Password rules are enforced client side. Password rules are not enforced during password reset.
-    - AI: Tighten the security model further by adding Firestore rules and custom claims for privileged roles.
+    + + AI: Tighten the security model further by adding Firestore rules and custom claims for privileged roles.
 
 - Search and Discovery
     - Search/filter implementation currently reads all parks and filters client-side. This should move to a true database-side query strategy as data grows.
-    + Search currently requires login. Users should be able to search and view park info without an account; login should be required for actions.
-    + Search by park location.
+    + + Search currently requires login. Users should be able to search and view park info without an account; login should be required for actions.
+    + + Search by park location.
 
 - Map and Park Selection Experience
-    + Map view becomes a blank screen when switching between parks.
-    + Default map screen should show all park pins by default.
-    + Default map position should be over broad area of Livonia, Michigan
-    + Parks should be selectable by clicking a map pin.
-    + Add option to select or look up park location when editing a park or add park location directly with an address.
+    + + Map view becomes a blank screen when switching between parks.
+    + + Default map screen should show all park pins by default.
+    + + Default map position should be over broad area of Livonia, Michigan
+    + + Parks should be selectable by clicking a map pin.
+    + + Add option to select or look up park location when editing a park or add park location directly with an address.
     - Investigate Leaflet vs Google Maps, including Google Maps API and billing requirements.
 
 - Crowd and Analytics
-    + 7-Day Crowd Trend date range is currently dependent on last report. Update to a rolling 7-day window with current day centered.
-    + Correct 7-Day Crowd Trend not present on Park screen
+    + + 7-Day Crowd Trend date range is currently dependent on last report. Update to a rolling 7-day window with current day centered.
+    + + Correct 7-Day Crowd Trend not present on Park screen
     - Determine how 7-Day Crowd Trend should report trend direction, not only a snapshot.
-    + Report times are in UTC, not local time. Add a general conversion function for broad use for local time of user. 
+    + + Report times are in UTC, not local time. Add a general conversion function for broad use for local time of user. 
     - Consider replacing the simple bar chart with a chart library for crowd visualization.
 
 - Reviews and Data Aggregation
@@ -35,7 +35,7 @@
 
 - Admin UI and Invitation Lifecycle
     - AI: Add invite lifecycle management: pending, revoked, expired, and accepted states in admin UI.
-    + Instead of each item like Add Equipment, Submit Review, and Submit Crowd Report having their full boxes opened by default when viewing a Park, only have the buttons placed under Actions, next to Edit Park, for instance, and when the buttons are pressed, a new window opens with full context for that action. These windows have the same content as the boxes as they exist now, but in their own new popup. 
+    + + Instead of each item like Add Equipment, Submit Review, and Submit Crowd Report having their full boxes opened by default when viewing a Park, only have the buttons placed under Actions, next to Edit Park, for instance, and when the buttons are pressed, a new window opens with full context for that action. These windows have the same content as the boxes as they exist now, but in their own new popup. 
 
 - Home Page UI and Navigation Wiring
     - Top buttons on Home page are not yet wired.

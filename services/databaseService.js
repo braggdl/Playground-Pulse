@@ -36,6 +36,7 @@ import { createSafetyReportModel, isValidReportType } from "../models/safetyRepo
 import { createReviewModel } from "../models/reviewModel.js";
 import { NOTIFICATION_EVENT_TYPES, notifyUser } from "./notificationService.js";
 import { uploadParkPhoto, validatePhoto } from "./storageService.js";
+import { moderateUserAccount, setUserRoleAndParks } from "./adminInvitationService.js";
 import {
   BUSY_LEVEL_WEIGHTING_POLICY,
   CROWD_REPORT_POLICY,
@@ -83,7 +84,7 @@ function createServiceError(error, fallbackMessage) {
   return new Error(error?.message || fallbackMessage);
 }
 
-function buildTrailingDateKeys(days) {
+function buildCenteredDateKeys(days) {
   const totalDays = Math.max(1, Math.floor(Number(days) || 1));
   const dateKeys = [];
   const now = new Date();
@@ -92,8 +93,11 @@ function buildTrailingDateKeys(days) {
   const utcMonth = now.getUTCMonth();
   const utcDay = now.getUTCDate();
 
-  for (let index = totalDays - 1; index >= 0; index -= 1) {
-    const d = new Date(Date.UTC(utcYear, utcMonth, utcDay - index));
+  const backwardDays = Math.floor(totalDays / 2);
+  const forwardDays = totalDays - backwardDays - 1;
+
+  for (let offset = -backwardDays; offset <= forwardDays; offset += 1) {
+    const d = new Date(Date.UTC(utcYear, utcMonth, utcDay + offset));
     dateKeys.push(d.toISOString().slice(0, 10));
   }
 
@@ -175,6 +179,33 @@ async function getUserRecordByUid(db, uid) {
   };
 }
 
+/**
+ * Resolve the caller's role from the Auth token custom claim, falling back to the
+ * Firestore profile field only when no claim is present.
+ *
+ * Security rules authorize against `request.auth.token.role`. Checking the same
+ * source here keeps the client-side gate and the server-side gate in agreement;
+ * reading only the (client-writable) profile field would let a user with a stale
+ * or unsynced claim pass this check and then be denied by the rules.
+ */
+async function resolveActorRole(actor) {
+  try {
+    const { auth } = getFirebaseServices();
+    const currentUser = auth?.currentUser;
+
+    if (currentUser) {
+      const tokenResult = await currentUser.getIdTokenResult();
+      if (tokenResult?.claims?.role) {
+        return tokenResult.claims.role;
+      }
+    }
+  } catch (error) {
+    console.warn("Unable to read role claim; falling back to profile role:", error);
+  }
+
+  return actor.data?.role;
+}
+
 async function assertAuthorizedUserForAction(db, userId, action) {
   const actor = await getUserRecordByUid(db, userId);
 
@@ -182,7 +213,7 @@ async function assertAuthorizedUserForAction(db, userId, action) {
     throw new Error("Actor user record not found.");
   }
 
-  const role = actor.data?.role;
+  const role = await resolveActorRole(actor);
   if (!canPerformAction(role, action)) {
     throw new Error("You do not have permission to complete this request.");
   }
@@ -517,16 +548,25 @@ async function getRecentCrowdReportsForPark(parkId, minutes = CROWD_REPORT_POLIC
     const db = getDatabaseService();
     const collectionRef = getCrowdReportsCollection(db);
     const windowStart = new Date(Date.now() - (minutes * 60 * 1000)).toISOString();
+
+    // Filter, sort, and cap server-side. `reportedAt` is an ISO-8601 string, so
+    // lexicographic ordering matches chronological ordering and the range filter
+    // is safe. Without the range filter this query returned every report a park
+    // had ever received and discarded most of them client-side.
+    // Requires the composite index (parkId ASC, reportedAt DESC) in firestore.indexes.json.
     const reportsQuery = query(
       collectionRef,
-      where("parkId", "==", parkId)
+      where("parkId", "==", parkId),
+      where("reportedAt", ">=", windowStart),
+      orderBy("reportedAt", "desc"),
+      limit(CROWD_REPORT_POLICY.maxReportsPerBusyLevelQuery)
     );
     const snapshot = await getDocs(reportsQuery);
 
-    return snapshot.docs
-      .map((reportDocument) => ({ id: reportDocument.id, ...reportDocument.data() }))
-      .filter((report) => (report.reportedAt || "") >= windowStart)
-      .sort((a, b) => (b.reportedAt || "").localeCompare(a.reportedAt || ""));
+    return snapshot.docs.map((reportDocument) => ({
+      id: reportDocument.id,
+      ...reportDocument.data()
+    }));
   } catch (error) {
     throw createServiceError(error, "Get recent crowd reports failed.");
   }
@@ -1079,19 +1119,28 @@ async function getCrowdHistory(parkId, days = 7) {
   }
 
   const totalDays = Math.max(1, Math.floor(Number(days) || 7));
-  const trailingDateKeys = buildTrailingDateKeys(totalDays);
-  const earliestDateKey = trailingDateKeys[0];
+  const centeredDateKeys = buildCenteredDateKeys(totalDays);
+  const earliestDateKey = centeredDateKeys[0];
+  const latestDateKey = centeredDateKeys[centeredDateKeys.length - 1];
 
   try {
     const db = getDatabaseService();
     const crowdReportsRef = getCrowdReportsCollection(db);
     const earliestISO = `${earliestDateKey}T00:00:00.000Z`;
-    // Query by parkId only (no compound index required), then filter by date client-side.
-    const snapshot = await getDocs(query(crowdReportsRef, where("parkId", "==", parkId)));
+    const latestISO = `${latestDateKey}T23:59:59.999Z`;
+    // Bound the date range server-side using the same (parkId ASC, reportedAt DESC)
+    // composite index used by getRecentCrowdReportsForPark. `reportedAt` is ISO-8601,
+    // so lexicographic range comparison matches chronological order.
+    const snapshot = await getDocs(query(
+      crowdReportsRef,
+      where("parkId", "==", parkId),
+      where("reportedAt", ">=", earliestISO),
+      where("reportedAt", "<=", latestISO),
+      orderBy("reportedAt", "desc")
+    ));
 
     const reports = snapshot.docs
-      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }))
-      .filter((report) => (report.reportedAt || "") >= earliestISO);
+      .map((reportDoc) => ({ id: reportDoc.id, ...reportDoc.data() }));
 
     const grouped = new Map();
     reports.forEach((report) => {
@@ -1107,7 +1156,7 @@ async function getCrowdHistory(parkId, days = 7) {
       grouped.get(dateKey).push(report);
     });
 
-    return trailingDateKeys.map((dateKey) => {
+    return centeredDateKeys.map((dateKey) => {
       const dayReports = grouped.get(dateKey) || [];
       const dayScores = dayReports
         .map((report) => {
@@ -1386,8 +1435,17 @@ async function logAuditEvent(event = {}) {
   try {
     const db = getDatabaseService();
     const auditLogRef = collection(db, "auditLog");
+
+    // Stamp actorId from the authenticated session rather than trusting the
+    // caller. Security rules require actorId == request.auth.uid, and some call
+    // sites pass a Firestore document ID that can differ from the Auth uid on
+    // legacy records. Deriving it here makes that mismatch structurally impossible.
+    const { auth } = getFirebaseServices();
+    const authenticatedActorId = auth?.currentUser?.uid || event.actorId;
+
     const auditEntry = createAuditLogModel({
       ...event,
+      actorId: authenticatedActorId,
       timestamp: event.timestamp || new Date().toISOString()
     });
 
@@ -1424,28 +1482,21 @@ async function assignParkAdmin(parkId, targetUserId, assignedByUserId) {
     }
 
     const assignedParks = Array.isArray(targetUser.data.assignedParks)
-      ? targetUser.data.assignedParks
+      ? [...targetUser.data.assignedParks]
       : [];
 
     if (!assignedParks.includes(parkId)) {
       assignedParks.push(parkId);
     }
 
-    await updateDoc(targetUser.ref, {
-      assignedParks,
-      role: targetUser.data.role || USER_ROLES.PARK_ADMIN,
-      updatedAt: new Date().toISOString()
-    });
-
-    await logAuditEvent({
-      eventType: AUDIT_EVENT_TYPES.ADMIN_ASSIGNED,
-      actorId: assigner.data.uid || assigner.id,
-      targetId: targetUser.data.uid || targetUser.id,
-      parkId,
-      metadata: {
-        action: "assign_park_admin"
-      }
-    });
+    // Role and assignedParks are server-owned: Firestore rules reject client writes
+    // to those fields, and the role must also be mirrored onto the Auth custom claim.
+    // The Cloud Function performs the write, sets the claim, and logs the audit event.
+    await setUserRoleAndParks(
+      targetUser.data.uid || targetUser.id,
+      targetUser.data.role || USER_ROLES.PARK_ADMIN,
+      assignedParks
+    );
 
     return {
       success: true,
@@ -1481,20 +1532,18 @@ async function removeParkAdmin(parkId, targetUserId, removedByUserId) {
       ? targetUser.data.assignedParks
       : []).filter((id) => id !== parkId);
 
-    await updateDoc(targetUser.ref, {
-      assignedParks,
-      updatedAt: new Date().toISOString()
-    });
+    // Demote to Parent once the last park assignment is removed, otherwise the
+    // user would keep Park Admin privileges with no parks to administer.
+    const nextRole = assignedParks.length === 0
+      ? USER_ROLES.PARENT
+      : (targetUser.data.role || USER_ROLES.PARK_ADMIN);
 
-    await logAuditEvent({
-      eventType: AUDIT_EVENT_TYPES.ADMIN_REMOVED,
-      actorId: remover.data.uid || remover.id,
-      targetId: targetUser.data.uid || targetUser.id,
-      parkId,
-      metadata: {
-        action: "remove_park_admin"
-      }
-    });
+    // Server-owned fields; see assignParkAdmin for rationale.
+    await setUserRoleAndParks(
+      targetUser.data.uid || targetUser.id,
+      nextRole,
+      assignedParks
+    );
 
     return {
       success: true,
@@ -1662,23 +1711,11 @@ async function moderateUser(targetUserId, action, moderatorId) {
       throw new Error("Target user not found.");
     }
 
-    await updateDoc(targetUser.ref, {
-      disabled: normalizedAction === "hide",
-      moderationAction: normalizedAction,
-      moderatedBy: moderator.data.uid || moderator.id,
-      moderatedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-
-    await logAuditEvent({
-      eventType: AUDIT_EVENT_TYPES.USER_MODERATED,
-      actorId: moderator.data.uid || moderator.id,
-      targetId: targetUser.data.uid || targetUser.id,
-      parkId: "",
-      metadata: {
-        action: normalizedAction
-      }
-    });
+    // Moderation fields are server-owned: Firestore rules reject client writes to
+    // `disabled`/`moderatedBy`/etc., and only the Admin SDK can disable the
+    // underlying Auth account. The Cloud Function performs the write, disables the
+    // Auth user, and logs the audit event.
+    await moderateUserAccount(targetUser.data.uid || targetUser.id, normalizedAction);
 
     return {
       success: true,

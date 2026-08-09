@@ -181,6 +181,14 @@
         </section>
       </div>
 
+      <div id="park-action-modal" class="park-action-modal" aria-hidden="true">
+        <div class="park-action-modal-backdrop" onclick="window.appControllerExports.closeParkActionModal()"></div>
+        <section class="park-action-modal-content" role="dialog" aria-modal="true" aria-label="Park action details">
+          <button type="button" class="park-action-modal-close" onclick="window.appControllerExports.closeParkActionModal()" aria-label="Close action details">x</button>
+          <div id="park-action-modal-content"></div>
+        </section>
+      </div>
+
     </section>
   </main>
 
@@ -194,16 +202,9 @@
 
   <script type="module">
     import { initializeApp } from "../controllers/appController.js";
-    import { handleLogout } from "../controllers/authController.js";
     
     // Initialize app
     initializeApp();
-
-    // Wire logout button
-    const logoutBtn = document.getElementById("logout-btn");
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", handleLogout);
-    }
 
     const butterfly = document.getElementById("dashboard-butterfly");
     const butterflyLayer = document.querySelector(".dashboard-butterfly-layer");
