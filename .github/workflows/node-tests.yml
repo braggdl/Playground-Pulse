@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           # Matches the Cloud Functions runtime declared in functions/package.json
-          node-version: '24'
+          node-version: '22'
 
       - name: Run tests
         run: node tests.js

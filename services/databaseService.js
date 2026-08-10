@@ -1187,6 +1187,54 @@ async function getCrowdHistory(parkId, days = 7) {
 /**
  * Phase 4: Create a park record with Sprint 1 field defaults.
  */
+async function deleteParkRecord(parkId, userId, role) {
+  if (!parkId) {
+    throw new Error("Park ID is required.");
+  }
+
+  if (!userId) {
+    throw new Error("User ID is required.");
+  }
+
+  if (!canPerformAction(role, "parkDelete")) {
+    throw new Error("You are not authorized to delete parks.");
+  }
+
+  try {
+    const db = getDatabaseService();
+    const parkRef = doc(db, "parks", parkId);
+    const parkSnapshot = await getDoc(parkRef);
+
+    if (!parkSnapshot.exists()) {
+      throw new Error("Park not found.");
+    }
+
+    const park = { id: parkSnapshot.id, ...parkSnapshot.data() };
+    await deleteDoc(parkRef);
+
+    // Non-fatal: a token-claim timing issue can reject the audit write even
+    // after the park document is already gone. Log and continue.
+    try {
+      await logAuditEvent({
+        eventType: "park_deleted",
+        actorId: userId,
+        targetId: parkId,
+        parkId,
+        metadata: {
+          name: park.name || "",
+          location: park.location || ""
+        }
+      });
+    } catch (auditError) {
+      console.error("Audit log write failed after park delete:", auditError);
+    }
+
+    return true;
+  } catch (error) {
+    throw createServiceError(error, "Delete park failed.");
+  }
+}
+
 async function createParkRecord(parkData) {
   const now = new Date().toISOString();
   const normalizedPark = createParkModel({
@@ -1752,6 +1800,7 @@ export {
   filterParks,
   searchAndFilterParks,
   getParkById,
+  deleteParkRecord,
   createParkRecord,
   editParkRecord,
   queryParksPage,

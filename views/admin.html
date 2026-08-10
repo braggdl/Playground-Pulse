@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Playground Pulse - Administration</title>
   <link rel="stylesheet" href="../styles/main.css" />
+  <script src="../scripts/auth-paint-hint.js"></script>
   <style>
     body.protected-pending {
       visibility: hidden;
     }
 
     .admin-container {
-      max-width: 1100px;
+      /* Width intentionally omitted: main.css caps this at 1120px to match
+         .app-header. A local max-width here made the body blocks 20px narrower
+         than the header. */
       margin: 0 auto;
       display: grid;
       gap: 1rem;
@@ -21,6 +24,8 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 1rem;
+      /* Uniform height across every row, not just within each row. */
+      grid-auto-rows: 1fr;
     }
 
     .admin-panel-title {
@@ -43,11 +48,12 @@
   <header class="app-header">
     <h1>Playground Pulse Administration</h1>
     <nav class="app-nav">
+      <a href="./home.html" class="nav-link">Home</a>
       <a href="./dashboard.html" class="nav-link">Dashboard</a>
-      <a href="./about.html" class="nav-link">About</a>
       <a href="./profile.html" class="nav-link">Profile</a>
+      <a href="./about.html" class="nav-link">About</a>
       <a href="./admin.html" class="nav-link active">Admin</a>
-      <button id="logout-btn" class="btn btn-secondary">Logout</button>
+      <button id="logout-btn" class="btn btn-secondary" data-auth-pending></button>
     </nav>
   </header>
 
@@ -100,6 +106,7 @@
           </div>
           <button type="submit" class="btn btn-primary">Generate Secure Invite</button>
         </form>
+        <p id="admin-invite-message" aria-live="polite"></p>
         <div id="admin-invite-result" class="admin-invite-result" style="display: none;"></div>
       </article>
 
@@ -119,6 +126,7 @@
             <button type="button" id="admin-remove-assignment-btn" class="btn btn-secondary">Remove</button>
           </div>
         </form>
+        <p id="admin-assignment-message" aria-live="polite"></p>
       </article>
 
       <article id="admin-moderation-panel" class="card moderation-panel" style="display: none;">
@@ -137,6 +145,7 @@
           </div>
           <button type="submit" class="btn btn-primary">Save Review Action</button>
         </form>
+        <p id="admin-moderation-message" aria-live="polite"></p>
 
         <section id="admin-user-moderation-section" style="margin-top: 1rem; display: none;">
           <h4 style="margin-bottom: 0.75rem;">Moderate Users (Site Admin)</h4>
@@ -209,12 +218,10 @@
 
     <section class="card admin-panel">
       <h2>Safety and Maintenance Management</h2>
-      <p class="admin-note">This view includes Workstream 1 management surfaces for safety reports and equipment status.</p>
       <div id="admin-workstream1-container" class="admin-panel-grid">
         <section id="admin-safety-panel" class="card admin-panel"></section>
         <section id="admin-equipment-panel" class="card admin-panel"></section>
       </div>
-      <section id="admin-workstream1-status" class="card admin-panel"></section>
     </section>
   </main>
 

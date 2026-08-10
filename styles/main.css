@@ -7,6 +7,25 @@
   box-sizing: border-box;
 }
 
+/* Always reserve room for the vertical scrollbar.
+
+   Profile is short enough to fit on screen while Dashboard, About, and Admin all
+   scroll. Without this, the scrollbar disappears on Profile, the viewport gets
+   ~15px wider, and every centered container slides right - which reads as the
+   content jumping when you switch to Profile.
+
+   scrollbar-gutter keeps the gutter reserved in modern browsers; the overflow-y
+   fallback forces a permanent (disabled) scrollbar everywhere else. */
+html {
+  scrollbar-gutter: stable;
+}
+
+@supports not (scrollbar-gutter: stable) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
 body {
   font-family: Arial, sans-serif;
   margin: 0;
@@ -280,27 +299,44 @@ body {
   color: rgba(227, 241, 251, 0.88);
 }
 
+/* POSITION CONTROLS for the four artwork icon buttons (desktop).
+   - `top`   : smaller value moves the row UP
+   - `right` : larger value moves the row LEFT (so a bigger number = further left)
+   Currently offset by 10px from the original: top was calc(1.8% + 2px),
+   right was 33px. */
+/* --nav-w, --btn-gap, --btn-size drive all four button positions.
+   Change only these three variables (or override per :nth-child) to move buttons. */
 .home-icon-nav {
+  --nav-w: calc(min(8.35vw, 134px) + 20px);
+  --btn-gap: min(0.45vw, 7px);
+  --btn-size: clamp(15px, calc(1.2vw + 5px), 21px);
+  --col-w: calc((var(--nav-w) - 3 * var(--btn-gap)) / 4);
+  --btn-offset: calc((var(--col-w) - var(--btn-size)) / 2);
+  --col-step: calc(var(--col-w) + var(--btn-gap));
   position: absolute;
-  top: calc(1.8% + 2px);
-  right: 33px;
-  width: calc(min(8.35vw, 134px) + 20px);
-  height: clamp(15px, calc(1.2vw + 5px), 21px);
+  top: calc(1.8% + 2px - 10px);
+  right: 23px;
+  width: var(--nav-w);
+  height: var(--btn-size);
   z-index: 4;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  column-gap: min(0.45vw, 7px);
 }
 
+/* SHAPE CONTROL for each individual button.
+   Override `left` on a specific :nth-child rule below to reposition that button. */
 .home-icon-hit {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  height: var(--btn-size);
+  width: var(--btn-size);
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: 4px;
   outline: none;
 }
+
+.home-icon-hit:nth-child(1) { left: calc(var(--btn-offset) + 4px); }
+.home-icon-hit:nth-child(2) { left: calc(var(--col-step) + var(--btn-offset) + 2px); }
+.home-icon-hit:nth-child(3) { left: calc(2 * var(--col-step) + var(--btn-offset)); }
+.home-icon-hit:nth-child(4) { left: calc(3 * var(--col-step) + var(--btn-offset) - 3px); }
 
 .home-icon-hit::before {
   content: "";
@@ -351,12 +387,14 @@ body {
     font-size: clamp(0.7rem, 2.45vw, 1rem);
   }
 
+  /* POSITION CONTROLS for the icon buttons at <=900px. Same 10px offset as the
+     desktop rule above (was top: calc(1.4% + 2px), right: 33px). */
   .home-icon-nav {
-    top: calc(1.4% + 2px);
-    right: 33px;
-    width: calc(min(15vw, 92px) + 20px);
-    height: clamp(13px, calc(1.6vw + 5px), 17px);
-    column-gap: clamp(2px, 0.45vw, 5px);
+    --nav-w: calc(min(15vw, 92px) + 20px);
+    --btn-gap: clamp(2px, 0.45vw, 5px);
+    --btn-size: clamp(13px, calc(1.6vw + 5px), 17px);
+    top: calc(1.4% + 2px - 10px);
+    right: 23px;
   }
 }
 
@@ -1510,7 +1548,9 @@ body.park-action-modal-open {
   }
 
   main {
-    padding: 1rem;
+    /* Vertical only: body already provides the outer gutter, so horizontal
+       padding here would inset the content past the header edge. */
+    padding: 1rem 0;
   }
 
   .app-header {
@@ -1637,6 +1677,14 @@ body.park-action-modal-open {
 
 .card + .card {
   margin-top: 0.75rem;
+}
+
+/* Inside a grid, spacing comes from `gap`. Leaving the stacking margin above in
+   place pushes every card except the first down within its cell, which reads as
+   the leading card being taller than its neighbours. */
+[class*="-grid"] > .card + .card,
+.about-workflow-stack > .card + .card {
+  margin-top: 0;
 }
 
 .badge {
@@ -1975,7 +2023,10 @@ main {
   max-width: 1120px;
   margin: 0 auto;
   background: transparent;
-  padding: 1.5rem;
+  /* Horizontal padding is 0 so the content edges line up exactly with the
+     .app-header box above, which is also capped at 1120px. Any side padding here
+     would inset the body blocks and make them read as narrower than the header. */
+  padding: 1.5rem 0;
   border-radius: 0;
 }
 
@@ -2002,6 +2053,39 @@ main {
 
 .app-nav {
   gap: 0.65rem;
+}
+
+/* First-paint auth button.
+
+   The label is supplied by CSS from the cached hint on <html> (set synchronously
+   by scripts/auth-paint-hint.js in <head>), so the correct text is painted on the
+   very first frame instead of being written by JS after Firebase resolves. That
+   asynchronous write is what caused the Login -> Logout flash.
+
+   Once the real auth state arrives, updateAuthNavButton() drops the attribute and
+   sets textContent normally. The rules below stop applying at that point, so the
+   verified state always wins over the hint.
+
+   The button ships with EMPTY text content, so ::after is the only thing that
+   sizes it. That keeps the width correct without a font-size hack. */
+[data-auth-hint="out"] #logout-btn[data-auth-pending]::after {
+  content: "Login";
+}
+
+[data-auth-hint="in"] #logout-btn[data-auth-pending]::after {
+  content: "Logout";
+}
+
+/* Same treatment for the Admin link so it does not pop in a moment later.
+   Hidden by default and revealed only when the cached hint says the last known
+   session was an admin. Uses a class rather than an inline style attribute so
+   these rules can win; inline styles would override the stylesheet. */
+#nav-admin-link[data-auth-pending] {
+  display: none;
+}
+
+[data-admin-hint="yes"] #nav-admin-link[data-auth-pending] {
+  display: inline-flex;
 }
 
 .nav-link {
@@ -2210,12 +2294,19 @@ main {
   max-width: 1120px;
 }
 
+/* These are layout wrappers, not surfaces. The shared card rule above gives them
+   a translucent background, shadow, and blur, which showed up as a faint panel
+   behind the real cards nested inside. Clearing box-shadow and backdrop-filter
+   too (not just background/border) makes the wrapper fully invisible. */
 .dashboard-content,
 .profile-container,
 .admin-container {
   padding: 0;
   border: 0;
   background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  border-radius: 0;
 }
 
 .profile-container,
@@ -2438,8 +2529,12 @@ body.profile-favorite-modal-open .profile-favorite-modal {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Single column, so each card should size to its own content. It must NOT get
+   the equal-row treatment below, or a short card like "Intended Users" is
+   stretched to match the very tall "Main Features" card stacked beneath it. */
 .about-intro-grid {
   grid-template-columns: 1fr;
+  grid-auto-rows: auto;
 }
 
 .about-feature-grid,
@@ -2450,6 +2545,16 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 
 .about-lessons-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* Equal heights across ALL rows, applied only to genuinely multi-column grids.
+   Rows size independently by default, so a grid that wraps (5 lesson cards in a
+   3-up layout) would otherwise give each row a different height. */
+.about-feature-grid,
+.about-retrospective-grid,
+.about-roadmap-grid,
+.about-lessons-grid {
+  grid-auto-rows: 1fr;
 }
 
 .about-copy-card,
@@ -2664,7 +2769,8 @@ body.profile-favorite-modal-open .profile-favorite-modal {
   }
 
   main {
-    padding: 1rem;
+    /* Vertical only, to stay flush with .app-header. */
+    padding: 1rem 0;
   }
 
   .profile-page .profile-layout-grid {
@@ -2742,9 +2848,13 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 
 .safety-report-container,
 .equipment-panel-container,
-.crowd-history-container,
-.park-map-container {
+.crowd-history-container {
   margin-top: 1.25rem;
+}
+
+/* Sits tight under .park-map-controls, which supplies the spacing above. */
+.park-map-container {
+  margin-top: 0.75rem;
 }
 
 .safety-report-panel,
@@ -2753,7 +2863,9 @@ body.profile-favorite-modal-open .profile-favorite-modal {
 .admin-panel {
   background: #fff;
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  /* Matches the shared card radius so these panels do not read as sharper-edged
+     than every other surface in the app. */
+  border-radius: var(--pp-radius-lg);
   padding: 1rem;
 }
 
@@ -2924,11 +3036,22 @@ body.profile-favorite-modal-open .profile-favorite-modal {
   outline-offset: 1px;
 }
 
+/* Map toggle, positioned immediately above the map panel. */
+.park-map-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+/* Wrapper only. The map is rendered inside its own .card, so giving this a
+   surface too produced a visible box behind the map panel. */
 .park-map-container {
-  background: #fff;
-  border: 1px solid #d5e2ef;
-  border-radius: 8px;
-  padding: 0.75rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .park-map-view {
@@ -2984,7 +3107,8 @@ body.profile-favorite-modal-open .profile-favorite-modal {
   }
 
   main {
-    padding: 0.75rem;
+    /* Vertical only, to stay flush with .app-header. */
+    padding: 0.75rem 0;
   }
 
   .home-search-overlay {

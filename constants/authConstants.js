@@ -85,6 +85,7 @@ const PARK_ROLE_RULES = {
   equipmentStatusChange: ["Park Admin", "Site Admin"],
   safetyReportDelete: ["Site Admin"],
   equipmentDelete: ["Park Admin", "Site Admin"],
+  parkDelete: ["Site Admin"],
   assignParkAdmin: ["Site Admin"],
   removeParkAdmin: ["Site Admin"],
   moderateContent: ["Park Admin", "Site Admin"],

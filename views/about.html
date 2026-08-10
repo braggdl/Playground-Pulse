@@ -5,17 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Playground Pulse - About</title>
   <link rel="stylesheet" href="../styles/main.css" />
+  <script src="../scripts/auth-paint-hint.js"></script>
 </head>
 <body class="app-shell-page about-page">
   <header class="app-header">
     <h1>About Playground Pulse</h1>
     <nav class="app-nav" aria-label="Primary navigation">
       <a href="./home.html" class="nav-link">Home</a>
-      <a href="./about.html" class="nav-link active" aria-current="page">About</a>
       <a href="./dashboard.html" class="nav-link">Dashboard</a>
       <a href="./profile.html" class="nav-link">Profile</a>
-      <a href="./admin.html" class="nav-link">Admin</a>
-      <a href="./login.html" class="nav-link">Login</a>
+      <a href="./about.html" class="nav-link active" aria-current="page">About</a>
+      <a href="./admin.html" id="nav-admin-link" class="nav-link" data-auth-pending>Admin</a>
+      <button id="logout-btn" class="btn btn-secondary" data-auth-pending></button>
     </nav>
   </header>
 
@@ -117,31 +118,31 @@
     <section id="website-showcase" class="about-section">
       <div class="page-intro card about-section-intro">
         <p class="eyebrow">2. Website showcase</p>
-        <p class="page-intro-copy">Instead of listing every screen in isolation, these workflows show what a user is trying to accomplish from start to finish and what the application does in support of that task.</p>
+        <p class="page-intro-copy">Rather than a generic feature tour, each card below outlines what we plan to show live for one of our three roles. Each walkthrough sticks to the actions that are unique to that role, and we've built in a few deliberate mistakes along the way so you can see not just the happy path, but how the app responds when something goes wrong.</p>
       </div>
 
       <div class="about-workflow-stack">
         <article class="card about-workflow-card">
           <div class="about-workflow-heading">
             <p class="eyebrow">Workflow 1</p>
-            <h3>Create an account and find a good-fit park</h3>
+            <h3>Parent</h3>
           </div>
           <div class="about-workflow-grid">
             <section>
               <h4>User goal</h4>
-              <p>A parent wants to create an account, sign in, search nearby parks, and quickly narrow the list to places that fit their child’s age and the family’s needs.</p>
+              <p>Show that a caregiver can register, find a park that actually fits their family, and leave it a little better for the next parent who visits.</p>
             </section>
             <section>
-              <h4>What we implemented</h4>
-              <p>The login page supports registration, sign-in, and password recovery. After login, the dashboard provides search, multi-filter discovery, pagination, and park cards that lead into richer park details.</p>
+              <h4>What we'll demonstrate</h4>
+              <p>We'll register a new account, catching a weak-password error before signing in, then search for a park by zip code with family-friendly filters on (including an over-filtered search that returns nothing). Once we're on a park, we'll submit a crowd report and try a second one to trigger the one-hour cooldown, leave a review and attempt a duplicate, and upload a photo, first with an unsupported file type and then successfully, before saving the park to Favorites.</p>
             </section>
             <section>
               <h4>Behind the scenes</h4>
-              <p>Firebase Authentication manages identity, while Firestore stores user roles and park records. Search and filter behavior reads structured park data and keeps the UI responsive with loading, empty, and retry states.</p>
+              <p>Firebase Authentication manages identity, while Firestore stores user roles and park records. The crowd-report cooldown and the one-review-per-park rule are both enforced in the UI and checked again on the server, so the errors you see during the demo are real permission and data-integrity checks, not staged messages.</p>
             </section>
             <section>
               <h4>Feature we are proud of</h4>
-              <p>The discovery flow stays focused on family-specific decisions rather than generic mapping. The combination of role-aware access and child-friendly filters makes the app feel purpose-built.</p>
+              <p>We're proud that the app backs up its family-friendly promise with real safeguards. Duplicate-submission protection, file validation, and honest empty states all work together to keep the information other parents rely on accurate and trustworthy.</p>
             </section>
           </div>
         </article>
@@ -149,24 +150,24 @@
         <article class="card about-workflow-card">
           <div class="about-workflow-heading">
             <p class="eyebrow">Workflow 2</p>
-            <h3>Open a park and contribute current information</h3>
+            <h3>Park Admin</h3>
           </div>
           <div class="about-workflow-grid">
             <section>
               <h4>User goal</h4>
-              <p>A signed-in user wants to decide whether a park is suitable right now, then contribute helpful information for other families by reporting crowd levels, safety concerns, reviews, or photos.</p>
+              <p>Show that a Park Admin's authority is real but scoped — they can maintain and moderate the parks assigned to them, and nothing else.</p>
             </section>
             <section>
-              <h4>What we implemented</h4>
-              <p>Users can open park details, submit crowd reports, view busy-level badges, review seven-day crowd trends, leave a rating, upload a photo, report safety or maintenance issues, and save parks to favorites.</p>
+              <h4>What we'll demonstrate</h4>
+              <p>Signed in as a Park Admin, we'll edit an assigned park's details, then try editing a park that isn't ours to trigger a permission error. We'll update an equipment item's status and add a new one, advance a safety report to "In Review," and attempt to delete it to show that deletion is Site Admin-only. Finally, we'll moderate a review on our assigned park, then attempt the same on a park we don't manage.</p>
             </section>
             <section>
               <h4>Behind the scenes</h4>
-              <p>Recent crowd reports are stored and used to compute a recency-weighted busy level. Safety reports, reviews, notifications, and favorites are persisted in Firestore, while photo uploads use Firebase Storage with type and size validation.</p>
+              <p>Every action checks the signed-in user's <code>assignedParks</code> list against the target park before the UI even renders a control, and that same check runs again in Firestore's security rules and service functions. That means a Park Admin can't get around the scoping simply by sending a request directly instead of clicking through the interface.</p>
             </section>
             <section>
               <h4>Feature we are proud of</h4>
-              <p>The app turns a simple park listing into a living record of community knowledge. The crowd, safety, and review features make the park detail view meaningfully actionable.</p>
+              <p>Watching a Park Admin get blocked from editing a park they don't manage, or from deleting a report they can't delete, isn't a flaw in the demo. It's the point. Those boundaries are enforced the same way in the interface and on the backend, so the permissions you see are the permissions that actually exist.</p>
             </section>
           </div>
         </article>
@@ -174,24 +175,24 @@
         <article class="card about-workflow-card">
           <div class="about-workflow-heading">
             <p class="eyebrow">Workflow 3</p>
-            <h3>Manage parks and moderate community activity</h3>
+            <h3>Site Admin</h3>
           </div>
           <div class="about-workflow-grid">
             <section>
               <h4>User goal</h4>
-              <p>An administrator wants to keep park records trustworthy by updating park data, handling reports, assigning admins, and moderating community content.</p>
+              <p>Demonstrate full platform oversight: onboarding new parks, provisioning admins, moderating content across the whole system, and staying accountable via the audit log.</p>
             </section>
             <section>
-              <h4>What we implemented</h4>
-              <p>Park Admin and Site Admin users can create and edit park records, update equipment status, manage safety-report workflows, moderate reviews, and use the administration console for assignments and audit visibility.</p>
+              <h4>What we'll demonstrate</h4>
+              <p>From the admin console, we'll create a new park and invite a Park Admin to manage it, then try an invalid invite (a Site Admin with assigned parks) to show it getting rejected. We'll suspend a demo account and confirm it's locked out at login, reopen and delete a closed safety report, and finish in the audit log, filtering by event type before clearing the filters to trigger a required-filter error.</p>
             </section>
             <section>
               <h4>Behind the scenes</h4>
-              <p>Role checks govern which actions are available in the interface and which updates can be persisted. Administrative actions also write audit events and trigger in-app notifications when report statuses change.</p>
+              <p>Site Admins skip the per-park <code>assignedParks</code> check entirely since their authority spans every park, but nothing they do goes unrecorded. Every create, invite, suspension, and moderation action writes an immutable audit event, and suspending an account disables the actual Firebase Auth record rather than just flipping a flag in the app.</p>
             </section>
             <section>
               <h4>Feature we are proud of</h4>
-              <p>The administration path demonstrates that the project is more than a front-end mockup. It shows how operational workflows, permissions, and data integrity were part of the design from the start.</p>
+              <p>We didn't want administrative trust to rest on good intentions alone, so we built the audit log to back it up with evidence. Everything a Site Admin does during the demo shows up right away in a filterable, timestamped record of who did what and when.</p>
             </section>
           </div>
         </article>
@@ -289,5 +290,15 @@
     </section>
 
   </main>
+
+  <script type="module">
+    // About is a public page, but it still needs the controller so the nav
+    // behaves like every other view: the auth button becomes Login or Logout
+    // depending on session state, and the Admin link stays hidden unless the
+    // signed-in user is a Park Admin or Site Admin.
+    import { initializeApp } from "../controllers/appController.js";
+
+    initializeApp();
+  </script>
 </body>
 </html>

@@ -344,6 +344,10 @@ async function handleLogin() {
     await login(email, password);
     // Flag for one-time welcome popup on dashboard
     sessionStorage.setItem("showWelcome", "1");
+    // Write the first-paint hint BEFORE redirecting. The auth-state listener also
+    // writes it, but the redirect below usually wins that race, which would leave
+    // the dashboard painting a "Login" button for a user who just signed in.
+    setAuthPaintHint(true);
     // Redirect to dashboard on success
     window.location.href = "./dashboard.html";
   } catch (error) {
@@ -385,6 +389,9 @@ async function handleRegister() {
 
     // Flag for one-time welcome popup on dashboard
     sessionStorage.setItem("showWelcome", "1");
+    // See the note in the login handler: set the hint before the redirect so the
+    // dashboard paints the signed-in nav on its first frame.
+    setAuthPaintHint(true);
     // Redirect to dashboard on success
     window.location.href = "./dashboard.html";
   } catch (error) {
@@ -398,9 +405,41 @@ async function handleRegister() {
   }
 }
 
+/**
+ * Writes the first-paint auth hint read by scripts/auth-paint-hint.js.
+ *
+ * Auth transitions in this controller are always followed by an immediate
+ * redirect, which typically beats the onAuthStateChanged listener. Setting the
+ * hint here guarantees the destination page paints the correct nav on frame one.
+ *
+ * Rendering hint only - never used for access control.
+ */
+function setAuthPaintHint(signedIn) {
+  try {
+    if (!signedIn) {
+      window.localStorage.removeItem("pp.authHint");
+      return;
+    }
+
+    // Role is not known yet at this point, so assume non-admin. The listener
+    // upgrades this once the role loads; admins see the Admin link appear on the
+    // next navigation rather than mid-paint.
+    window.localStorage.setItem("pp.authHint", JSON.stringify({
+      signedIn: true,
+      isAdmin: false
+    }));
+  } catch (error) {
+    // Storage unavailable (private mode/quota). Nav still resolves via JS.
+  }
+}
+
 async function handleLogout() {
   try {
     await logout();
+
+    // Clear the hint before redirecting, for the same race reason as login.
+    setAuthPaintHint(false);
+
     // Redirect to login page on success
     window.location.href = "./login.html";
   } catch (error) {

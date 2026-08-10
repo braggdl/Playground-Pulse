@@ -305,16 +305,26 @@ export const syncOwnRoleClaim = onCall(async (request) => {
   }
 
   const uid = request.auth.uid;
-
-  if (request.auth.token?.role) {
-    return { success: true, role: request.auth.token.role, changed: false };
-  }
+  const currentClaim = request.auth.token?.role;
 
   const db = getFirestore();
   const auth = getAuth();
   const userRecord = await getUserRecordByUid(db, uid);
   const firestoreRole = userRecord?.data?.role;
   const role = ALLOWED_USER_ROLES.includes(firestoreRole) ? firestoreRole : USER_ROLES.PARENT;
+
+  // Reconcile a STALE claim, not just a missing one. Accounts provisioned by
+  // seeding or a direct Firestore edit are stamped 'Parent' by the onCreate
+  // trigger and never upgraded, which leaves the UI showing admin controls while
+  // security rules (which read the claim) reject every write.
+  //
+  // This is safe because `users/{uid}.role` is no longer client-writable: the
+  // rules forbid clients from touching `role` on update and pin it to 'Parent'
+  // on create, so the only way the document can say "Site Admin" is if a Cloud
+  // Function using the Admin SDK put it there.
+  if (currentClaim === role) {
+    return { success: true, role, changed: false };
+  }
 
   await applyRoleClaim(auth, uid, role);
 

@@ -25,6 +25,7 @@ import {
   createReview,
   createSafetyReport,
   deleteEquipment,
+  deleteParkRecord,
   deleteSafetyReport,
   editParkRecord,
   getAuditLog,
@@ -56,6 +57,9 @@ import {
   getFirebaseServices,
   initializeFirebaseServices
 } from "../services/firebase-config.js";
+
+// Must match the key used by the inline first-paint script in each page's <head>.
+const AUTH_HINT_STORAGE_KEY = "pp.authHint";
 
 const appState = {
   isInitialized: false,
@@ -145,6 +149,10 @@ const appState = {
   dashboardParkModalOpen: false,
   activeParkActionModal: null,
   profileFavoriteModalOpen: false,
+  // Delete park confirmation modal state.
+  deleteParkConfirmInput: "",
+  isDeletingPark: false,
+  deleteParkError: null,
   // Admin view state.
   adminParks: [],
   adminSelectedParkId: "",
@@ -155,7 +163,8 @@ const appState = {
     actionError: false,
     isSubmitting: false,
     auditEntries: [],
-    isLoadingAudit: false
+    isLoadingAudit: false,
+    auditError: null
   }
 };
 
@@ -915,6 +924,10 @@ function setParkActionModal(actionName = null) {
   if (actionName === "edit") {
     renderParkForm();
   }
+
+  if (actionName === "delete") {
+    renderDeleteParkModal();
+  }
 }
 
 function openParkActionModal(actionName) {
@@ -929,6 +942,36 @@ function closeParkActionModal() {
   setParkActionModal(null);
 }
 
+/**
+ * Caches the last known auth state so the next page load can paint the nav
+ * correctly on its first frame.
+ *
+ * Firebase restores sessions asynchronously, so any JS-driven label necessarily
+ * arrives after first paint. Writing the outcome here lets the inline <head>
+ * script on the next navigation read it synchronously and render the right
+ * button immediately, eliminating the flash entirely.
+ *
+ * This is a rendering hint ONLY. It is client-writable and must never be treated
+ * as proof of identity or permission; real enforcement stays in firestore.rules
+ * and the route guards, which continue to run against the verified token.
+ */
+function persistAuthHint(firebaseUser, role) {
+  try {
+    if (!firebaseUser) {
+      window.localStorage.removeItem(AUTH_HINT_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(AUTH_HINT_STORAGE_KEY, JSON.stringify({
+      signedIn: true,
+      isAdmin: role === USER_ROLES.PARK_ADMIN || role === USER_ROLES.SITE_ADMIN
+    }));
+  } catch (error) {
+    // Private browsing or a full quota. The nav still resolves normally once
+    // auth completes; only the first-paint optimization is lost.
+  }
+}
+
 function updateAuthNavButton() {
   const existingButton = document.getElementById("logout-btn");
   if (!existingButton) {
@@ -937,6 +980,16 @@ function updateAuthNavButton() {
 
   const replacementButton = existingButton.cloneNode(true);
   existingButton.replaceWith(replacementButton);
+
+  // Until Firebase restores the session we genuinely do not know whether this is
+  // a Login or a Logout button, so keep it invisible rather than guessing. The
+  // markup ships with `data-auth-pending`, which reserves the button's space but
+  // hides it; committing to a label here is what caused the Login -> Logout flash.
+  if (!appState.authReady) {
+    return;
+  }
+
+  replacementButton.removeAttribute("data-auth-pending");
 
   if (isAuthenticated()) {
     replacementButton.textContent = "Logout";
@@ -1434,9 +1487,8 @@ function renderMapPanel() {
 function renderAdminPanels() {
   const safetyPanel = document.getElementById("admin-safety-panel");
   const equipmentPanel = document.getElementById("admin-equipment-panel");
-  const statusPanel = document.getElementById("admin-workstream1-status");
 
-  if (!safetyPanel || !equipmentPanel || !statusPanel) {
+  if (!safetyPanel || !equipmentPanel) {
     return;
   }
 
@@ -1449,7 +1501,6 @@ function renderAdminPanels() {
   if (!canManageSafetyReports(adminParkId) && !canManageEquipment(adminParkId)) {
     safetyPanel.innerHTML = "<h3>Safety Reports</h3><p>You do not have permission to manage safety reports.</p>";
     equipmentPanel.innerHTML = "<h3>Equipment Status</h3><p>You do not have permission to manage equipment records.</p>";
-    statusPanel.innerHTML = "<p>Use a Park Admin or Site Admin account for Workstream 1 management actions.</p>";
     return;
   }
 
@@ -1457,6 +1508,7 @@ function renderAdminPanels() {
 
   safetyPanel.innerHTML = `
     <h3>Safety Report Queue</h3>
+    ${appState.safetyReportError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.safetyReportError)}</p>` : ""}
     <div class="form-group">
       <label for="admin-park-selector">Selected Park</label>
       <select id="admin-park-selector" onchange="window.appControllerExports.selectAdminPark(this.value)">
@@ -1488,6 +1540,7 @@ function renderAdminPanels() {
 
   equipmentPanel.innerHTML = `
     <h3>Equipment Status Queue</h3>
+    ${appState.equipmentError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.equipmentError)}</p>` : ""}
     <div class="equipment-grid">
       ${appState.equipmentItems.map((equipment) => `
         <article class="equipment-item">
@@ -1506,10 +1559,6 @@ function renderAdminPanels() {
       `).join("")}
       ${appState.equipmentItems.length === 0 ? "<p>No equipment records found for this park.</p>" : ""}
     </div>
-  `;
-
-  statusPanel.innerHTML = `
-    ${appState.adminPanelError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.adminPanelError)}</p>` : "<p>Workstream 1 management actions are ready.</p>"}
   `;
 }
 
@@ -1577,6 +1626,23 @@ function setAdminActionMessage(message, isError = false) {
   actionContainer.style.display = "block";
   actionContainer.textContent = message;
   actionContainer.className = isError ? "error-message show" : "park-form-success";
+}
+
+// Write feedback directly to a section-level element, keeping it contextual.
+function setAdminSectionMessage(message, isError = false, targetId) {
+  const container = document.getElementById(targetId);
+  if (!container) {
+    return;
+  }
+
+  if (!message) {
+    container.textContent = "";
+    container.className = "";
+    return;
+  }
+
+  container.textContent = message;
+  container.className = isError ? "error-message show" : "park-form-success";
 }
 
 function setAdminInviteResult(result = null) {
@@ -1663,6 +1729,11 @@ function renderAuditLogResults() {
     return;
   }
 
+  if (appState.admin.auditError) {
+    resultsContainer.innerHTML = `<p class="error-message show">${escapeHtml(appState.admin.auditError)}</p>`;
+    return;
+  }
+
   if (!Array.isArray(appState.admin.auditEntries) || appState.admin.auditEntries.length === 0) {
     resultsContainer.innerHTML = "<p>No audit log entries found for the current filter.</p>";
     return;
@@ -1695,12 +1766,12 @@ async function handleAssignParkAdminFromForm(event) {
     const targetUserId = (document.getElementById("admin-assignment-user-id")?.value || "").trim();
 
     appState.admin.isSubmitting = true;
-    setAdminActionMessage(null);
+    setAdminSectionMessage(null, false, "admin-assignment-message");
 
     await assignParkAdmin(parkId, targetUserId, appState.currentUser?.uid);
-    setAdminActionMessage("Park Admin assignment saved.");
+    setAdminSectionMessage("Park Admin assignment saved.", false, "admin-assignment-message");
   } catch (error) {
-    setAdminActionMessage(formatAppError(error, "Failed to assign Park Admin."), true);
+    setAdminSectionMessage(formatAppError(error, "Failed to assign Park Admin."), true, "admin-assignment-message");
   } finally {
     appState.admin.isSubmitting = false;
   }
@@ -1725,7 +1796,7 @@ async function handleInviteAdminFromForm(event) {
     const assignedParks = parseInviteParkIds(document.getElementById("admin-invite-park-ids")?.value || "");
 
     appState.admin.isSubmitting = true;
-    setAdminActionMessage(null);
+    setAdminSectionMessage(null, false, "admin-invite-message");
     setAdminInviteResult(null);
 
     const result = await inviteAdminAccount({
@@ -1735,10 +1806,10 @@ async function handleInviteAdminFromForm(event) {
       assignedParks
     });
 
-    setAdminActionMessage("Secure invite generated. Share the password setup link with the invitee.");
+    setAdminSectionMessage("Secure invite generated. Share the password setup link with the invitee.", false, "admin-invite-message");
     setAdminInviteResult(result);
   } catch (error) {
-    setAdminActionMessage(formatAppError(error, "Failed to create invite."), true);
+    setAdminSectionMessage(formatAppError(error, "Failed to create invite."), true, "admin-invite-message");
     setAdminInviteResult(null);
   } finally {
     appState.admin.isSubmitting = false;
@@ -1753,12 +1824,12 @@ async function handleRemoveParkAdminFromForm(event) {
     const targetUserId = (document.getElementById("admin-assignment-user-id")?.value || "").trim();
 
     appState.admin.isSubmitting = true;
-    setAdminActionMessage(null);
+    setAdminSectionMessage(null, false, "admin-assignment-message");
 
     await removeParkAdmin(parkId, targetUserId, appState.currentUser?.uid);
-    setAdminActionMessage("Park Admin assignment removed.");
+    setAdminSectionMessage("Park Admin assignment removed.", false, "admin-assignment-message");
   } catch (error) {
-    setAdminActionMessage(formatAppError(error, "Failed to remove Park Admin assignment."), true);
+    setAdminSectionMessage(formatAppError(error, "Failed to remove Park Admin assignment."), true, "admin-assignment-message");
   } finally {
     appState.admin.isSubmitting = false;
   }
@@ -1772,14 +1843,14 @@ async function handleModerateReviewFromForm(event) {
     const action = document.getElementById("admin-review-action")?.value || "hide";
 
     appState.admin.isSubmitting = true;
-    setAdminActionMessage(null);
+    setAdminSectionMessage(null, false, "admin-moderation-message");
 
     await moderateReview(reviewId, action, appState.currentUser?.uid);
-    setAdminActionMessage("Review moderation action saved.");
+    setAdminSectionMessage("Review moderation action saved.", false, "admin-moderation-message");
     await loadCommunityFeaturesForSelectedPark();
     renderAdminPanels();
   } catch (error) {
-    setAdminActionMessage(formatAppError(error, "Failed to moderate review."), true);
+    setAdminSectionMessage(formatAppError(error, "Failed to moderate review."), true, "admin-moderation-message");
   } finally {
     appState.admin.isSubmitting = false;
   }
@@ -1793,12 +1864,12 @@ async function handleModerateUserFromForm(event) {
     const action = document.getElementById("admin-user-action")?.value || "disable";
 
     appState.admin.isSubmitting = true;
-    setAdminActionMessage(null);
+    setAdminSectionMessage(null, false, "admin-moderation-message");
 
     await moderateUser(targetUserId, action, appState.currentUser?.uid);
-    setAdminActionMessage("User moderation action saved.");
+    setAdminSectionMessage("User moderation action saved.", false, "admin-moderation-message");
   } catch (error) {
-    setAdminActionMessage(formatAppError(error, "Failed to moderate user."), true);
+    setAdminSectionMessage(formatAppError(error, "Failed to moderate user."), true, "admin-moderation-message");
   } finally {
     appState.admin.isSubmitting = false;
   }
@@ -1813,7 +1884,7 @@ async function handleLoadAuditLogFromForm(event) {
     const eventType = (document.getElementById("admin-audit-event-type")?.value || "").trim();
 
     appState.admin.isLoadingAudit = true;
-    setAdminActionMessage(null);
+    appState.admin.auditError = null;
     renderAuditLogResults();
 
     const filters = {
@@ -1826,11 +1897,17 @@ async function handleLoadAuditLogFromForm(event) {
     if (eventType) filters.eventType = eventType;
 
     appState.admin.auditEntries = await getAuditLog(filters);
+    // Must clear the loading flag BEFORE rendering. renderAuditLogResults()
+    // checks isLoadingAudit first and short-circuits to the spinner, so
+    // rendering while it is still true leaves "Loading audit log..." on screen
+    // permanently and the empty/results states are never reached.
+    appState.admin.isLoadingAudit = false;
     renderAuditLogResults();
   } catch (error) {
+    appState.admin.isLoadingAudit = false;
     appState.admin.auditEntries = [];
+    appState.admin.auditError = formatAppError(error, "Failed to load audit log.");
     renderAuditLogResults();
-    setAdminActionMessage(formatAppError(error, "Failed to load audit log."), true);
   } finally {
     appState.admin.isLoadingAudit = false;
   }
@@ -1850,6 +1927,15 @@ async function handleAdminLookupFromForm(event) {
   resultContainer.innerHTML = `<p>Loading ${escapeHtml(collectionName)}...</p>`;
 
   try {
+    // Firestore rules for the users collection require the role custom claim in the
+    // auth token. Force-refresh the token if the claim is missing before querying.
+    if (collectionName === "users" && appState.currentUser) {
+      const tokenResult = await appState.currentUser.getIdTokenResult();
+      if (!tokenResult?.claims?.role) {
+        await appState.currentUser.getIdToken(true);
+      }
+    }
+
     let records = await readRecords(collectionName, {});
 
     // Client-side filter by human-readable fields.
@@ -2124,7 +2210,6 @@ async function transitionSafetyReport(reportId, targetStatus) {
     renderAdminPanels();
   } catch (error) {
     appState.safetyReportError = formatAppError(error, "Unable to update safety report status.");
-    appState.adminPanelError = appState.safetyReportError;
     renderSafetyReportPanel();
     renderAdminPanels();
   }
@@ -2148,7 +2233,6 @@ async function deleteSafetyReportHandler(reportId) {
     renderAdminPanels();
   } catch (error) {
     appState.safetyReportError = formatAppError(error, "Unable to delete safety report.");
-    appState.adminPanelError = appState.safetyReportError;
     renderSafetyReportPanel();
     renderAdminPanels();
   }
@@ -2223,7 +2307,6 @@ async function transitionEquipmentStatus(equipmentId, status) {
     renderAdminPanels();
   } catch (error) {
     appState.equipmentError = formatAppError(error, "Unable to update equipment status.");
-    appState.adminPanelError = appState.equipmentError;
     renderEquipmentPanel();
     renderAdminPanels();
   }
@@ -2247,7 +2330,6 @@ async function deleteEquipmentHandler(equipmentId) {
     renderAdminPanels();
   } catch (error) {
     appState.equipmentError = formatAppError(error, "Unable to delete equipment.");
-    appState.adminPanelError = appState.equipmentError;
     renderEquipmentPanel();
     renderAdminPanels();
   }
@@ -2302,17 +2384,6 @@ async function loadUserRole(uid) {
     const firebaseUser = appState.currentUser;
     let tokenResult = firebaseUser ? await firebaseUser.getIdTokenResult() : null;
 
-    if (firebaseUser && !tokenResult?.claims?.role) {
-      try {
-        await syncOwnRoleClaim();
-        // Force-refresh so the freshly minted claim is in the token immediately
-        // rather than after the default ~1 hour expiry.
-        tokenResult = await firebaseUser.getIdTokenResult(true);
-      } catch (syncError) {
-        console.warn("Role claim sync unavailable; falling back to profile role:", syncError);
-      }
-    }
-
     // The profile document is still needed for assignedParks, which is not carried
     // in the token. Reading it is permitted by the rules (own document, by ID).
     let userRecord = null;
@@ -2320,6 +2391,26 @@ async function loadUserRole(uid) {
       userRecord = await getRecordById("users", uid);
     } catch (recordError) {
       console.warn("Unable to load user profile record:", recordError);
+    }
+
+    // Sync when the claim is missing OR when it disagrees with the profile role.
+    // The stale case matters most: the onCreate trigger stamps every new account
+    // 'Parent', so an admin provisioned by seeding or a direct Firestore edit
+    // keeps a Parent claim forever. The UI would read the profile and render
+    // admin controls while security rules read the claim and deny every write,
+    // surfacing as "You do not have permission to complete this request."
+    const claimRole = tokenResult?.claims?.role || null;
+    const profileRole = userRecord?.role || null;
+
+    if (firebaseUser && profileRole && claimRole !== profileRole) {
+      try {
+        await syncOwnRoleClaim();
+        // Force-refresh so the reconciled claim is in the token immediately
+        // rather than after the default ~1 hour expiry.
+        tokenResult = await firebaseUser.getIdTokenResult(true);
+      } catch (syncError) {
+        console.warn("Role claim sync unavailable; falling back to profile role:", syncError);
+      }
     }
 
     appState.userRole = tokenResult?.claims?.role || userRecord?.role || null;
@@ -2375,6 +2466,11 @@ async function handleAuthStateChanged(firebaseUser) {
   appState.currentUser = firebaseUser;
   appState.authStatusMessage = firebaseUser ? null : "Signed out";
 
+  // Persist the resolved state immediately, before the awaits below. The inline
+  // script in each page's <head> reads this synchronously on the next navigation
+  // to paint the correct auth button on the very first frame.
+  persistAuthHint(firebaseUser, appState.userRole);
+
   // Phase 2: Load user role from Firestore when user logs in
   if (firebaseUser) {
     await loadUserRole(firebaseUser.uid);
@@ -2388,6 +2484,10 @@ async function handleAuthStateChanged(firebaseUser) {
 
   appState.authReady = true;
 
+  // Re-persist now that the role is known, so the Admin link can also be painted
+  // correctly on first frame rather than appearing a moment later.
+  persistAuthHint(firebaseUser, appState.userRole);
+
   // Route decisions must happen only after auth state is resolved.
   if (applyRouteAccessRules(firebaseUser)) {
     return;
@@ -2395,6 +2495,10 @@ async function handleAuthStateChanged(firebaseUser) {
 
   revealProtectedViewAfterAuthReady();
   updateAuthNavButton();
+  // Must run on EVERY view. The Admin link exists in the nav of several pages,
+  // so gating it only inside the dashboard branch below left it visible to
+  // Parents on Profile and About.
+  updateAdminNavVisibility();
 
   if (appState.currentView === "dashboard") {
     renderParkForm();
@@ -2574,12 +2678,35 @@ function clearParkDetail() {
   renderCrowdHistoryPanel();
 }
 
+/**
+ * Shows the Admin nav link only to Park Admins and Site Admins.
+ *
+ * Lives on its own (rather than inside updateDashboardManagementControls) because
+ * the link appears in the nav on multiple pages, so visibility has to be resolved
+ * on every view once auth state is known. Defaults to hidden in the markup so the
+ * link never flashes for Parents before this runs.
+ */
+function updateAdminNavVisibility() {
+  const adminNavLink = document.getElementById("nav-admin-link");
+
+  if (!adminNavLink) {
+    return;
+  }
+
+  // Drop the first-paint hint so the CSS fallback stops applying and the verified
+  // role below becomes the single source of truth.
+  adminNavLink.removeAttribute("data-auth-pending");
+
+  // Role-only check: the Admin link is about reaching the console at all, not
+  // about any one park. Park scoping is applied to the actions inside it.
+  adminNavLink.style.display = canAccessAdminView() ? "inline-flex" : "none";
+}
+
 function updateDashboardManagementControls() {
   const createButton = document.getElementById("create-park-btn");
   const mapToggleButton = document.getElementById("toggle-map-view-btn");
-  const adminNavLink = document.getElementById("nav-admin-link");
 
-  if (!createButton && !mapToggleButton && !adminNavLink) {
+  if (!createButton && !mapToggleButton) {
     return;
   }
 
@@ -2593,12 +2720,6 @@ function updateDashboardManagementControls() {
 
   if (mapToggleButton) {
     mapToggleButton.style.display = appState.currentView === "dashboard" ? "inline-flex" : "none";
-  }
-
-  if (adminNavLink) {
-    // Role-only check: the Admin link is about reaching the console at all, not
-    // about any one park. Park scoping is applied to the actions inside it.
-    adminNavLink.style.display = canAccessAdminView() ? "inline-flex" : "none";
   }
 }
 
@@ -2735,6 +2856,126 @@ function cancelParkForm() {
   }
 
   renderParkForm();
+}
+
+function updateDeleteParkConfirmInput(value) {
+  appState.deleteParkConfirmInput = String(value || "");
+  // Update only the button to avoid destroying the focused input on every keystroke.
+  const confirmBtn = document.getElementById("delete-park-confirm-btn");
+  if (confirmBtn) {
+    confirmBtn.disabled = appState.deleteParkConfirmInput !== "DELETE" || appState.isDeletingPark;
+  }
+}
+
+function openDeleteParkModal() {
+  if (!appState.selectedPark) {
+    return;
+  }
+
+  if (!canDeleteParkRecord()) {
+    return;
+  }
+
+  appState.deleteParkConfirmInput = "";
+  appState.deleteParkError = null;
+  setParkActionModal("delete");
+}
+
+function closeDeleteParkModal() {
+  appState.deleteParkConfirmInput = "";
+  appState.deleteParkError = null;
+  closeParkActionModal();
+}
+
+async function deleteParkHandler() {
+  try {
+    if (!appState.currentUser?.uid) {
+      throw new Error("Sign in to delete a park.");
+    }
+
+    if (!appState.selectedPark?.id) {
+      throw new Error("No park selected.");
+    }
+
+    if (appState.deleteParkConfirmInput !== "DELETE") {
+      throw new Error('Type DELETE to confirm.');
+    }
+
+    appState.isDeletingPark = true;
+    appState.deleteParkError = null;
+    renderDeleteParkModal();
+
+    await deleteParkRecord(appState.selectedPark.id, appState.currentUser.uid, getCurrentUserRole());
+
+    appState.isDeletingPark = false;
+    appState.selectedPark = null;
+    appState.deleteParkConfirmInput = "";
+    closeParkActionModal();
+
+    renderParkDetail();
+    await refreshParkResultsAfterMutation();
+  } catch (error) {
+    appState.isDeletingPark = false;
+    appState.deleteParkError = formatAppError(error, "Unable to delete park.");
+    renderDeleteParkModal();
+  }
+}
+
+function renderDeleteParkModal() {
+  const modalContainer = appState.activeParkActionModal === "delete"
+    ? document.getElementById("park-action-modal-content")
+    : null;
+
+  if (!modalContainer) {
+    return;
+  }
+
+  if (!appState.selectedPark) {
+    modalContainer.innerHTML = "";
+    return;
+  }
+
+  const parkName = escapeHtml(appState.selectedPark.name || "this park");
+  const confirmReady = appState.deleteParkConfirmInput === "DELETE";
+
+  modalContainer.innerHTML = `
+    <section class="detail-section card">
+      <h3 style="margin-top: 0;">Delete Park</h3>
+      <p><strong>You are about to permanently delete "${parkName}".</strong> This action cannot be undone.</p>
+      <p>To confirm, type <strong>DELETE</strong> in the field below.</p>
+      ${appState.deleteParkError ? `<p class="crowd-report-message crowd-report-error">${escapeHtml(appState.deleteParkError)}</p>` : ""}
+      <div class="form-group">
+        <label for="delete-park-confirm-input">Confirmation</label>
+        <input
+          id="delete-park-confirm-input"
+          type="text"
+          placeholder="Type DELETE"
+          value="${escapeHtml(appState.deleteParkConfirmInput)}"
+          oninput="window.appControllerExports.updateDeleteParkConfirmInput(this.value)"
+          autocomplete="off"
+        />
+      </div>
+      <div class="park-form-actions">
+        <button
+          id="delete-park-confirm-btn"
+          type="button"
+          class="btn btn-primary"
+          onclick="window.appControllerExports.deletePark()"
+          ${!confirmReady || appState.isDeletingPark ? "disabled" : ""}
+        >
+          ${appState.isDeletingPark ? "Deleting..." : "Confirm Delete"}
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="window.appControllerExports.closeDeleteParkModal()"
+          ${appState.isDeletingPark ? "disabled" : ""}
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
+  `;
 }
 
 async function submitParkForm() {
@@ -2943,6 +3184,7 @@ function renderParkDetail() {
         <section class="detail-section">
           <h3>Actions</h3>
           <button class="btn btn-primary" onclick="window.appControllerExports.openEditParkForm()">Edit Park</button>
+          ${canDeleteParkRecord() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openDeleteParkModal()">Delete Park</button>` : ""}
           ${isAuthenticated() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('crowd')">Submit Crowd Report</button>` : ""}
           ${isAuthenticated() ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('review')">Submit Review</button>` : ""}
           ${(canManageEquipment() || canDeleteEquipmentRecords()) ? `<button class="btn btn-secondary" onclick="window.appControllerExports.openParkActionModal('equipment')">Add Equipment</button>` : ""}
@@ -3929,7 +4171,11 @@ function initializeApp() {
       deleteEquipment: deleteEquipmentHandler,
       toggleMapView,
       selectAdminPark,
-      refreshCrowdHistory
+      refreshCrowdHistory,
+      updateDeleteParkConfirmInput,
+      openDeleteParkModal,
+      closeDeleteParkModal,
+      deletePark: deleteParkHandler
     };
     
     return appState;
